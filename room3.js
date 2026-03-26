@@ -312,6 +312,32 @@ ctrlR.addEventListener('selectstart', onVRTrigger);
 ctrlR.addEventListener('squeezestart', onVRGripDown);
 ctrlR.addEventListener('squeezeend', onVRGripUp);
 
+function hideVRResult() {
+  drawBoardIdle();            
+  const overlay = document.getElementById('vrResultOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+window.hideVRResult = hideVRResult;
+
+function onVRGripUp(){
+  if(!state.vrCableHeld) return;
+  state.vrCableHeld=false; rayMat.color.setHex(0x00d4ff);
+  if(state.vrTempCable){scene.remove(state.vrTempCable);state.vrTempCable=null;}
+  const hit=vrRayHit();
+  if(!hit||!hit.object.userData.nodeName){setStatus('Холбогдсонгүй','error');state.vrCableStart=null;return;}
+  const startNode=state.vrCableStart, endNode=hit.object.userData.nodeName;
+  if(startNode===endNode){setStatus('Өөр node сонгоно уу!','error');state.vrCableStart=null;return;}
+  const sorted=[startNode,endNode].sort().join('-');
+  let connIdx=null;
+  if(sorted==='router-switch') connIdx=1;
+  else if(sorted==='pc1-switch') connIdx=(startNode==='pc1'||endNode==='pc1')?2:3;
+  else if(sorted==='pc2-switch') connIdx=3;
+  else if(sorted==='pc1-pc2') connIdx=4;
+  if(connIdx){selectConn(connIdx);validateAndConnect(connIdx);vrFlash(hit.point,state.selectedCableType==='straight'?0x4ade80:0xf97316);}
+  else setStatus(`❌ "${startNode}" → "${endNode}" холболт байхгүй`,'error');
+  state.vrCableStart=null;
+}
+
 renderer.xr.addEventListener('sessionstart', () => {
   document.body.classList.add('vr-active');
   state.vrSessionEnded = false;

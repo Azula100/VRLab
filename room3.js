@@ -297,6 +297,7 @@ const rayMat=new THREE.LineBasicMaterial({color:0x00d4ff,transparent:true,opacit
 const rayLine=new THREE.Line(rayGeom,rayMat);
 ctrlR.add(rayLine);
 
+// ── Hover/marker meshes — room3Group-д нэмэх (өрөө харагдахгүй үед далдлагддаг)
 const hoverSphere=new THREE.Mesh(
   new THREE.SphereGeometry(0.13,16,16),
   new THREE.MeshBasicMaterial({color:0x00ffcc,transparent:true,opacity:0.35,wireframe:true})
@@ -328,7 +329,7 @@ renderer.xr.addEventListener('sessionend', () => {
 });
 
 function showVRResult() {
-  drawBoardResult();          
+  drawBoardResult();
   const overlay = document.getElementById('vrResultOverlay');
   if (overlay) {
     const correct=state.correctConns,wrong=state.wrongAttempts,total=TOTAL_CONNS;
@@ -356,7 +357,7 @@ function showVRResult() {
 }
 
 function hideVRResult() {
-  drawBoardIdle();            
+  drawBoardIdle();
   const overlay = document.getElementById('vrResultOverlay');
   if (overlay) overlay.style.display = 'none';
 }
@@ -422,8 +423,8 @@ function showWrongEffect(){
 
 function drawCable(key,cableType){
   const p=state.positions; if(!p.router) return;
-  if(cableObjects[key]){scene.remove(cableObjects[key]);cableObjects[key]=null;}
-  if(cableLabels[key]){scene.remove(cableLabels[key]);cableLabels[key]=null;}
+  if(cableObjects[key]){room3Group.remove(cableObjects[key]);cableObjects[key]=null;}
+  if(cableLabels[key]){room3Group.remove(cableLabels[key]);cableLabels[key]=null;}
   let start,end;
   if(key==='rs'){start=p.router.clone();end=p.switch1.clone();}
   if(key==='sp1'){start=p.switch1.clone();end=p.pc1.clone();}
@@ -448,17 +449,19 @@ function makeFloatingLabel(text,color,position){
   ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,128,34);
   const tex=new THREE.CanvasTexture(c);
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
-  sp.scale.set(0.45,0.11,1); sp.position.copy(position); scene.add(sp); return sp;
+  sp.scale.set(0.45,0.11,1); sp.position.copy(position);
+  room3Group.add(sp); // ✅ room3Group
+  return sp;
 }
 
 // ── RESET ──
 function resetCables(){
   ['rs','sp1','sp2','pp'].forEach(k=>{
-    if(cableObjects[k]){scene.remove(cableObjects[k]);cableObjects[k]=null;}
-    if(cableLabels[k]){scene.remove(cableLabels[k]);cableLabels[k]=null;}
+    if(cableObjects[k]){room3Group.remove(cableObjects[k]);cableObjects[k]=null;}
+    if(cableLabels[k]){room3Group.remove(cableLabels[k]);cableLabels[k]=null;}
     state.cables[k]=false;
   });
-  state.packets.forEach(p=>scene.remove(p.mesh)); state.packets.length=0;
+  state.packets.forEach(p=>room3Group.remove(p.mesh)); state.packets.length=0;
   state.activeConn=null; state.vrFirstNode=null;
   state.correctConns=0; state.wrongAttempts=0;
   firstNodeMarker.visible=false;
@@ -503,11 +506,8 @@ function onVRTrigger(){
     const first=state.vrFirstNode, second=nodeName;
     if(first===second){setStatus('Өөр node сонгоно уу!','error');return;}
 
-    // ── FIX: Зөв холболтын индекс тодорхойлох ──
-    // sorted key нь аль ч дарааллаар дарсан ч зөв ажиллана
     const sorted=[first,second].sort().join('-');
     let connIdx=null;
-
     if(sorted==='router-switch'){
       connIdx=1;
     } else if(sorted==='pc1-switch' || sorted==='switch-pc1'){
@@ -546,16 +546,14 @@ function onVRGripDown(){
 function onVRGripUp(){
   if(!state.vrCableHeld) return;
   state.vrCableHeld=false; rayMat.color.setHex(0x00d4ff);
-  if(state.vrTempCable){scene.remove(state.vrTempCable);state.vrTempCable=null;}
+  if(state.vrTempCable){room3Group.remove(state.vrTempCable);state.vrTempCable=null;}
   const hit=vrRayHit();
   if(!hit||!hit.object.userData.nodeName){setStatus('Холбогдсонгүй','error');state.vrCableStart=null;return;}
   const startNode=state.vrCableStart, endNode=hit.object.userData.nodeName;
   if(startNode===endNode){setStatus('Өөр node сонгоно уу!','error');state.vrCableStart=null;return;}
 
-  // ── FIX: Grip дуусахад мөн зөв логик ──
   const sorted=[startNode,endNode].sort().join('-');
   let connIdx=null;
-
   if(sorted==='router-switch'){
     connIdx=1;
   } else if(sorted==='pc1-switch' || sorted==='switch-pc1'){
@@ -576,63 +574,27 @@ function onVRGripUp(){
   state.vrCableStart=null;
 }
 
-// ── VR GAMEPAD ──
-// FIX: Товчны индексүүд - Meta Quest / OpenXR стандарт:
-// Баруун гар: buttons[0]=A, buttons[1]=B, buttons[4]=RThumbstick press, buttons[5]=RThumbstick touch
-// Зүүн гар:   buttons[0]=X, buttons[1]=Y, buttons[4]=LThumbstick press, buttons[5]=LThumbstick touch
-// Гэхдээ зарим API-д: buttons[4]=A/X, buttons[5]=B/Y гэж хариулдаг (headset-ээс хамаарна)
-// Аюулгүй байдлын тулд ХОЁУЛАНГ нь шалгана:
-const vrBtns={A:false,B:false,X:false,Y:false};
-
+const vrBtns={A:false,B:false,X:false,Y:false,MENU:false};
 function handleVRGamepad(){
   const session=renderer.xr.getSession(); if(!session) return;
   session.inputSources.forEach(src=>{
     const gp=src.gamepad; if(!gp) return;
     const h=src.handedness;
-
     if(h==='right'){
-      // A товч: buttons[4] эсвэл buttons[0] (headset-ээс хамаарна)
-      const aPressed = (gp.buttons[4]?.pressed || gp.buttons[0]?.pressed) ?? false;
-      if(aPressed && !vrBtns.A){ vrBtns.A=true; togglePower(); }
-      else if(!aPressed){ vrBtns.A=false; }
-
-      // B товч: buttons[5] эсвэл buttons[1]
-      const bPressed = (gp.buttons[5]?.pressed || gp.buttons[1]?.pressed) ?? false;
-      if(bPressed && !vrBtns.B){ vrBtns.B=true; resetCables(); }
-      else if(!bPressed){ vrBtns.B=false; }
-
-      // Баруун thumbstick хөдөлгөөн (axes[2], axes[3])
-      const ax=gp.axes[2]||0, ay=gp.axes[3]||0;
-      if(Math.abs(ax)>0.15||Math.abs(ay)>0.15){
-        if(state.playerRig){
-          const dir=new THREE.Vector3(); camera.getWorldDirection(dir); dir.y=0; dir.normalize();
-          const right=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0));
-          state.playerRig.position.addScaledVector(dir,-ay*state.moveSpeed);
-          state.playerRig.position.addScaledVector(right,ax*state.moveSpeed);
-        }
-      }
+      if(gp.buttons[4]?.pressed&&!vrBtns.A){vrBtns.A=true;togglePower();}else if(!gp.buttons[4]?.pressed)vrBtns.A=false;
+      if(gp.buttons[5]?.pressed&&!vrBtns.B){vrBtns.B=true;resetCables();}else if(!gp.buttons[5]?.pressed)vrBtns.B=false;
+      if(!vrBtns.MENU && gp.buttons[3]?.pressed){vrBtns.MENU=true; exitVR();}
+      else if(!gp.buttons[3]?.pressed) vrBtns.MENU=false;
     }
-
     if(h==='left'){
-      // X товч: buttons[4] эсвэл buttons[0]
-      const xPressed = (gp.buttons[4]?.pressed || gp.buttons[0]?.pressed) ?? false;
-      if(xPressed && !vrBtns.X){ vrBtns.X=true; setCableType('straight'); }
-      else if(!xPressed){ vrBtns.X=false; }
-
-      // Y товч: buttons[5] эсвэл buttons[1]
-      const yPressed = (gp.buttons[5]?.pressed || gp.buttons[1]?.pressed) ?? false;
-      if(yPressed && !vrBtns.Y){ vrBtns.Y=true; setCableType('crossover'); }
-      else if(!yPressed){ vrBtns.Y=false; }
-
-      // Зүүн thumbstick хөдөлгөөн (axes[2], axes[3])
-      const lax=gp.axes[2]||0, lay=gp.axes[3]||0;
-      if(Math.abs(lax)>0.15||Math.abs(lay)>0.15){
-        if(state.playerRig){
-          const dir=new THREE.Vector3(); camera.getWorldDirection(dir); dir.y=0; dir.normalize();
-          const right=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0));
-          state.playerRig.position.addScaledVector(dir,-lay*state.moveSpeed);
-          state.playerRig.position.addScaledVector(right,lax*state.moveSpeed);
-        }
+      if(gp.buttons[4]?.pressed&&!vrBtns.X){vrBtns.X=true;setCableType('straight');}else if(!gp.buttons[4]?.pressed)vrBtns.X=false;
+      if(gp.buttons[5]?.pressed&&!vrBtns.Y){vrBtns.Y=true;setCableType('crossover');}else if(!gp.buttons[5]?.pressed)vrBtns.Y=false;
+      const ax=gp.axes[2]||0,ay=gp.axes[3]||0;
+      if(Math.abs(ax)>0.15||Math.abs(ay)>0.15){
+        const dir=new THREE.Vector3(); camera.getWorldDirection(dir); dir.y=0; dir.normalize();
+        const right=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0));
+        state.playerRig.position.addScaledVector(dir,-ay*state.moveSpeed);
+        state.playerRig.position.addScaledVector(right,ax*state.moveSpeed);
       }
     }
   });
@@ -651,20 +613,19 @@ function updateVRHover(){
     rayLine.geometry.setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,-3)]);
   }
 
-  // FIX: nodeName → positions key хөрвүүлэлт засагдсан
   const nodeToKey = { router:'router', switch:'switch1', pc1:'pc1', pc2:'pc2' };
 
   if(state.vrCableHeld&&state.vrCableStart){
-    if(state.vrTempCable) scene.remove(state.vrTempCable);
+    if(state.vrTempCable) room3Group.remove(state.vrTempCable);
     const sp=state.positions[nodeToKey[state.vrCableStart]];
     if(sp){const ep=new THREE.Vector3();ctrlR.getWorldPosition(ep);state.vrTempCable=makeCableMesh(sp.clone(),ep,state.selectedCableType==='crossover'?0xf97316:0x4ade80);}
   }
   if(state.vrFirstNode&&!state.vrCableHeld){
-    if(state.vrTempCable) scene.remove(state.vrTempCable);
+    if(state.vrTempCable) room3Group.remove(state.vrTempCable);
     const sp=state.positions[nodeToKey[state.vrFirstNode]];
     if(sp){const ep=new THREE.Vector3();ctrlR.getWorldPosition(ep);state.vrTempCable=makeCableMesh(sp.clone(),ep,state.selectedCableType==='crossover'?0xf97316:0x4ade80);}
   } else if(!state.vrCableHeld&&!state.vrFirstNode&&state.vrTempCable){
-    scene.remove(state.vrTempCable);state.vrTempCable=null;
+    room3Group.remove(state.vrTempCable);state.vrTempCable=null;
   }
 }
 
@@ -681,27 +642,31 @@ function vrPulse(nodeName){
   const nodeToKey = { router:'router', switch:'switch1', pc1:'pc1', pc2:'pc2' };
   const pos=state.positions[nodeToKey[nodeName]]; if(!pos) return;
   const ring=new THREE.Mesh(new THREE.RingGeometry(0.1,0.15,32),new THREE.MeshBasicMaterial({color:0x00d4ff,transparent:true,opacity:0.8,side:THREE.DoubleSide}));
-  ring.position.copy(pos); ring.rotation.x=-Math.PI/2; scene.add(ring);
+  ring.position.copy(pos); ring.rotation.x=-Math.PI/2;
+  room3Group.add(ring); // ✅ room3Group
   let t=0;
-  const anim=()=>{t+=0.04;ring.scale.setScalar(1+t*2);ring.material.opacity=Math.max(0,0.8-t);if(t<1)requestAnimationFrame(anim);else scene.remove(ring);}; anim();
+  const anim=()=>{t+=0.04;ring.scale.setScalar(1+t*2);ring.material.opacity=Math.max(0,0.8-t);if(t<1)requestAnimationFrame(anim);else room3Group.remove(ring);}; anim();
 }
 
 function vrFlash(pos,color){
-  const l=new THREE.PointLight(color,5,2); l.position.copy(pos); scene.add(l);
-  let v=5;const fade=()=>{v-=0.3;l.intensity=v;if(v>0)requestAnimationFrame(fade);else scene.remove(l);};fade();
+  const l=new THREE.PointLight(color,5,2); l.position.copy(pos);
+  room3Group.add(l); // ✅ room3Group
+  let v=5;const fade=()=>{v-=0.3;l.intensity=v;if(v>0)requestAnimationFrame(fade);else room3Group.remove(l);};fade();
 }
 
-// ── CABLE MESH ──
+// ── CABLE MESH — room3Group-д нэмэх ──
 function makeCableMesh(start,end,color){
   const mid=new THREE.Vector3().addVectors(start,end).multiplyScalar(0.5); mid.y-=0.18;
   const curve=new THREE.QuadraticBezierCurve3(start,mid,end);
   const pts=curve.getPoints(40);
   const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),40,0.016,8,false);
   const mat=new THREE.MeshStandardMaterial({color,emissive:0x000000,emissiveIntensity:0});
-  const mesh=new THREE.Mesh(geo,mat); room3Group.add(mesh); return mesh;
+  const mesh=new THREE.Mesh(geo,mat);
+  room3Group.add(mesh); // ✅ room3Group
+  return mesh;
 }
 
-// ── DASHED CABLE ──
+// ── DASHED CABLE — room3Group-д нэмэх ──
 const dashedState={segs:[],fillT:0,filling:false,done:false,TOTAL:20};
 
 function buildDashedCable(fromPos,toPos){
@@ -717,9 +682,10 @@ function buildDashedCable(fromPos,toPos){
     for(let s=0;s<=8;s++) pts.push(curve.getPoint(THREE.MathUtils.clamp(t0+(t1-t0)*(s/8),0,1)));
     const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),8,0.012,6,false);
     const dashMesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:0x445566,transparent:true,opacity:0.5}));
-    room3Group.add(dashMesh);
+    room3Group.add(dashMesh); // ✅ room3Group
     const fillMesh=new THREE.Mesh(geo.clone(),new THREE.MeshBasicMaterial({color:0x00ff88,transparent:true,opacity:0}));
-    fillMesh.visible=false; room3Group.add(fillMesh);
+    fillMesh.visible=false;
+    room3Group.add(fillMesh); // ✅ room3Group
     dashedState.segs.push({dash:dashMesh,fill:fillMesh});
   }
 }
@@ -758,8 +724,8 @@ function updateDashedCable(delta){
   if(dashedState.fillT>=1){dashedState.done=true;dashedState.filling=false;}
 }
 
-// ── WIFI + PHONE ──
-const wifiGroup=new THREE.Group(); room3Group.add(wifiGroup);
+// ── WIFI + PHONE — room3Group-д нэмэх ──
+const wifiGroup=new THREE.Group(); room3Group.add(wifiGroup); // ✅
 const wifiRings=[]; let wifiPhase=0; let phoneObj=null; let wifiLineMesh=null;
 
 function createWifiRings(rPos){
@@ -777,14 +743,16 @@ function createPhone(rPos){
   const scr=new THREE.Mesh(new THREE.BoxGeometry(0.065,0.13,0.013),new THREE.MeshBasicMaterial({color:0x1a88ff}));
   scr.position.z=0.001; g.add(scr);
   g.position.set(rPos.x+0.5,rPos.y+0.15,rPos.z+0.3); g.rotation.y=-0.5;
-  room3Group.add(g); return g;
+  room3Group.add(g); // ✅ room3Group
+  return g;
 }
 function createWifiLine(fromPos,toPos){
   if(wifiLineMesh) room3Group.remove(wifiLineMesh);
   const pts=[fromPos.clone().add(new THREE.Vector3(0,0.3,0)),toPos.clone()];
   const geo=new THREE.BufferGeometry().setFromPoints(pts);
   const mat=new THREE.LineDashedMaterial({color:0x00d4ff,dashSize:0.08,gapSize:0.05,transparent:true,opacity:0.8});
-  wifiLineMesh=new THREE.Line(geo,mat); wifiLineMesh.computeLineDistances(); room3Group.add(wifiLineMesh);
+  wifiLineMesh=new THREE.Line(geo,mat); wifiLineMesh.computeLineDistances();
+  room3Group.add(wifiLineMesh); // ✅ room3Group
 }
 function updateWifiLine(){
   if(!wifiLineMesh||!phoneObj) return;
@@ -833,13 +801,13 @@ function addCeilingLight(x, z) {
   wire.position.y = 0.165;
   group.add(wire);
   group.position.set(x, roomH - 0.04, z);
-  room3Group.add(group);
+  room3Group.add(group); // ✅ room3Group
   const light = new THREE.PointLight(0xfffde7, 2.5, 8);
   light.position.set(x, roomH - 0.2, z);
   light.castShadow = true;
   light.shadow.mapSize.width = 512;
   light.shadow.mapSize.height = 512;
-  scene.add(light);
+  room3Group.add(light); // ✅ room3Group (PointLight-г room3Group-д нэмэх)
   return { group, light, bulbMat: panel.material, cone: null };
 }
 
@@ -858,7 +826,8 @@ function createWallSocket(pos){
   });
   const ring=new THREE.Mesh(new THREE.RingGeometry(0.07,0.09,16),new THREE.MeshBasicMaterial({color:0xff4444,side:THREE.DoubleSide,transparent:true,opacity:0}));
   ring.position.z=0.025; g.add(ring); state.powerLight=ring;
-  g.position.copy(pos); room3Group.add(g);
+  g.position.copy(pos);
+  room3Group.add(g); // ✅ room3Group
 }
 createWallSocket(new THREE.Vector3(-1.38,0.4,-0.2));
 
@@ -869,17 +838,17 @@ function togglePower(){
   const ind=state.indicators['router'];
   if(state.routerOn){
     btn.textContent='Router Унтраах'; btn.classList.add('on');
-    if(ind) ind.material.color.setHex(0x00ff44);
+    if(ind){ ind.material.color.setHex(0x00ff44); ind.material.emissive && ind.material.emissive.setHex(0x00ff44); }
     if(state.powerLight){state.powerLight.material.opacity=0.8;state.powerLight.material.color.setHex(0x00ff44);}
     startDashedFill();
     setStatus('✅ Router асаагдлаа! Кабелийн төрөл сонгоод холбоно уу.','success');
     document.getElementById('powerStatus').textContent='Router: Асаалттай ✅';
   } else {
     btn.textContent='⚡ Router Асаах'; btn.classList.remove('on');
-    if(ind) ind.material.color.setHex(0x444444);
+    if(ind){ ind.material.color.setHex(0x444444); }
     if(state.powerLight) state.powerLight.material.opacity=0;
     stopDashedFill();
-    state.packets.forEach(p=>scene.remove(p.mesh)); state.packets.length=0;
+    state.packets.forEach(p=>room3Group.remove(p.mesh)); state.packets.length=0;
     setStatus('Router унтарлаа.','');
     document.getElementById('powerStatus').textContent='Router: Унтарсан';
     document.getElementById('dataStatus').textContent='Өгөгдөл: Зогссон';
@@ -887,23 +856,29 @@ function togglePower(){
 }
 window.togglePower=togglePower;
 
+// ── INDICATORS — room3Group-д нэмэх, MeshStandardMaterial ашиглах ──
 function addIndicator(pos,name){
-  const l=new THREE.Mesh(new THREE.SphereGeometry(0.04,8,8),new THREE.MeshBasicMaterial({color:0x444444}));
-  l.position.set(pos.x,pos.y+0.25,pos.z); scene.add(l); state.indicators[name]=l;
+  const l=new THREE.Mesh(
+    new THREE.SphereGeometry(0.04,8,8),
+    new THREE.MeshStandardMaterial({color:0x444444, emissive:0x000000, emissiveIntensity:0})
+  );
+  l.position.set(pos.x,pos.y+0.25,pos.z);
+  room3Group.add(l); // ✅ room3Group — өрөө харагдахгүй үед далдлагддаг
+  state.indicators[name]=l;
 }
 
-// ── PACKETS ──
+// ── PACKETS — room3Group-д нэмэх ──
 function spawnPacket(from,to,color){
   const m=new THREE.Mesh(new THREE.SphereGeometry(0.04,8,8),new THREE.MeshBasicMaterial({color}));
   m.position.copy(from);
   m.add(new THREE.Mesh(new THREE.SphereGeometry(0.07,8,8),new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.3})));
-  scene.add(m);
+  room3Group.add(m); // ✅ room3Group
   state.packets.push({mesh:m,from:from.clone(),to:to.clone(),t:0,speed:0.008+Math.random()*0.004});
 }
 function updatePackets(){
   for(let i=state.packets.length-1;i>=0;i--){
     const p=state.packets[i]; p.t+=p.speed;
-    if(p.t>=1){scene.remove(p.mesh);state.packets.splice(i,1);}
+    if(p.t>=1){room3Group.remove(p.mesh);state.packets.splice(i,1);}
     else p.mesh.position.lerpVectors(p.from,p.to,p.t);
   }
 }
@@ -995,7 +970,6 @@ loader.load('./lab4.glb',gltf=>{
   router.getWorldPosition(r); switch1.getWorldPosition(s); pc1.getWorldPosition(p1); pc2.getWorldPosition(p2);
   state.positions={router:r,switch1:s,pc1:p1,pc2:p2};
 
-  // FIX: userData.nodeName нь 'switch' байхаар тохируулсан (switch1 биш)
   router.traverse(o=>{o.userData.nodeName='router'; clickableObjects.push(o);});
   switch1.traverse(o=>{o.userData.nodeName='switch'; clickableObjects.push(o);});
   pc1.traverse(o=>{o.userData.nodeName='pc1'; clickableObjects.push(o);});

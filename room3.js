@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import {GLTFLoader} from "three/addons/loaders/GLTFLoader.js";
-import {VRButton} from "three/addons/webxr/VRButton.js";
-import {OrbitControls} from "three/addons/controls/OrbitControls.js";
 import {XRControllerModelFactory} from "three/addons/webxr/XRControllerModelFactory.js";
+
+export function createRoom3(scene, camera, renderer) {
 
 const CABLE_RULES = {
   'router-switch': 'straight',
@@ -29,29 +29,19 @@ const state = {
   vrSessionEnded: false,
 };
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x202025);
-scene.fog = new THREE.Fog(0x1a1a2e, 20, 40);
-const camera   = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 100);
-camera.position.set(0, 1.6, 3);
-camera.lookAt(0, 1, 0);
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth, innerHeight);
-renderer.xr.enabled = true;
-renderer.shadowMap.enabled = true;
-document.body.appendChild(renderer.domElement);
-document.body.appendChild(VRButton.createButton(renderer));
-
 const roomW = 10, roomH = 5, roomD = 10;
 function makeMat(color, rough=0.8, metal=0) {
   return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
 }
 
+const room3Group = new THREE.Group();
+scene.add(room3Group);
+
 const floorMat = new THREE.MeshStandardMaterial({ color: 0x8b7355, roughness: 0.9 });
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomW, roomD), floorMat);
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
-scene.add(floor);
+room3Group.add(floor);
 
 for (let i = -4; i <= 4; i++) {
   const g = new THREE.Mesh(
@@ -60,7 +50,7 @@ for (let i = -4; i <= 4; i++) {
   );
   g.rotation.x = -Math.PI / 2;
   g.position.set(i, 0.001, 0);
-  scene.add(g);
+  room3Group.add(g);
 }
 for (let i = -4; i <= 4; i++) {
   const g = new THREE.Mesh(
@@ -69,32 +59,32 @@ for (let i = -4; i <= 4; i++) {
   );
   g.rotation.x = -Math.PI / 2;
   g.position.set(0, 0.001, i);
-  scene.add(g);
+  room3Group.add(g);
 }
 
 const wallMatA = makeMat(0xd4c9b0, 0.9);
 const wallBack = new THREE.Mesh(new THREE.PlaneGeometry(roomW, roomH), wallMatA);
 wallBack.position.set(0, roomH / 2, -roomD / 2);
 wallBack.receiveShadow = true;
-scene.add(wallBack);
+room3Group.add(wallBack);
 
 const wallFront = new THREE.Mesh(new THREE.PlaneGeometry(roomW, roomH), wallMatA.clone());
 wallFront.rotation.y = Math.PI;
 wallFront.position.set(0, roomH / 2, roomD / 2);
 wallFront.receiveShadow = true;
-scene.add(wallFront);
+room3Group.add(wallFront);
 
 const wallLeft = new THREE.Mesh(new THREE.PlaneGeometry(roomD, roomH), wallMatA.clone());
 wallLeft.rotation.y = Math.PI / 2;
 wallLeft.position.set(-roomW / 2, roomH / 2, 0);
 wallLeft.receiveShadow = true;
-scene.add(wallLeft);
+room3Group.add(wallLeft);
 
 const wallRight = new THREE.Mesh(new THREE.PlaneGeometry(roomD, roomH), wallMatA.clone());
 wallRight.rotation.y = -Math.PI / 2;
 wallRight.position.set(roomW / 2, roomH / 2, 0);
 wallRight.receiveShadow = true;
-scene.add(wallRight);
+room3Group.add(wallRight);
 
 const ceiling = new THREE.Mesh(
   new THREE.PlaneGeometry(roomW, roomD),
@@ -103,7 +93,7 @@ const ceiling = new THREE.Mesh(
 ceiling.rotation.x = Math.PI / 2;
 ceiling.position.set(0, roomH, 0);
 ceiling.receiveShadow = true;
-scene.add(ceiling);
+room3Group.add(ceiling);
 
 const corniceMatC = makeMat(0xe8e0d0, 0.7);
 const corniceH = 0.12, corniceD = 0.1;
@@ -114,7 +104,7 @@ const corniceH = 0.12, corniceD = 0.1;
   { pos:[ roomW/2 - corniceD/2, roomH - corniceH/2, 0], rot:[0,-Math.PI/2,0], w:roomD },
 ].forEach(({pos,rot,w})=>{
   const c = new THREE.Mesh(new THREE.BoxGeometry(w, corniceH, corniceD), corniceMatC);
-  c.position.set(...pos); c.rotation.set(...rot); scene.add(c);
+  c.position.set(...pos); c.rotation.set(...rot); room3Group.add(c);
 });
 
 const baseH = 0.1, baseD = 0.06;
@@ -126,7 +116,7 @@ const baseMat = makeMat(0xc8b89a, 0.7);
   { pos:[ roomW/2 - baseD/2, baseH/2, 0], rot:[0,-Math.PI/2,0], w:roomD },
 ].forEach(({pos,rot=[0,0,0],w})=>{
   const b = new THREE.Mesh(new THREE.BoxGeometry(w, baseH, baseD), baseMat);
-  b.position.set(...pos); b.rotation.set(...rot); scene.add(b);
+  b.position.set(...pos); b.rotation.set(...rot); room3Group.add(b);
 });
 
 const doorGroup = new THREE.Group();
@@ -150,28 +140,13 @@ const handle=new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.12,8),handl
 handle.rotation.x=Math.PI/2; handle.position.set(0,1.0,0.05); doorGroup.add(handle);
 const handlePlate=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.15,0.02),handleMat);
 handlePlate.position.set(0,1.0,0.04); doorGroup.add(handlePlate);
-doorGroup.position.set(-roomW/2+0.08,0,-1.0); 
+doorGroup.position.set(-roomW/2+0.08,0,-1.0);
 doorGroup.rotation.y=Math.PI/2;
-scene.add(doorGroup);
+doorGroup.userData.kind = 'backDoor';
+room3Group.add(doorGroup);
 
-const playerRig = new THREE.Group();
-playerRig.add(camera);
-scene.add(playerRig);
-state.playerRig = playerRig;
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.target.set(0,1,0);
-controls.update();
-
-scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
-scene.add(new THREE.AmbientLight(0x404040, 2));
-const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-dirLight.position.set(3,10,10); dirLight.castShadow=true;
-scene.add(dirLight);
-
-// ── BOARD
-const BOARD_W = 2.8, BOARD_H = 1.8;  
+// ── BOARD ──
+const BOARD_W = 2.8, BOARD_H = 1.8;
 const boardCanvas  = document.createElement('canvas');
 boardCanvas.width  = 1024;
 boardCanvas.height = 640;
@@ -235,7 +210,6 @@ function drawBoardResult() {
   const barX=60, barY=300, barW=w-120, barH=20, barR=10;
   c.fillStyle = 'rgba(255,255,255,0.08)';
   roundRect(c,barX,barY,barW,barH,barR); c.fill();
-  // Дүүрсэн хэсэг
   if(pct>0){
     const filled = barW * (pct/100);
     const grad = c.createLinearGradient(barX,0,barX+filled,0);
@@ -257,12 +231,10 @@ function drawBoardResult() {
     roundRect(c,bx,boxY,boxW,boxH,16); c.fill();
     c.strokeStyle = box.color+'55'; c.lineWidth=2;
     roundRect(c,bx,boxY,boxW,boxH,16); c.stroke();
-    // Тоо
     c.fillStyle = box.color;
     c.font = 'bold 72px Segoe UI, Arial';
     c.textAlign = 'center'; c.textBaseline = 'middle';
     c.fillText(box.value, bx+boxW/2, boxY+boxH*0.44);
-    // Нэр
     c.fillStyle = '#64748b';
     c.font = '600 22px Segoe UI, Arial';
     c.textAlign = 'center'; c.textBaseline = 'top';
@@ -287,6 +259,7 @@ function roundRect(ctx,x,y,w,h,r){
   ctx.closePath();
 }
 drawBoardIdle();
+
 const boardGroup = new THREE.Group();
 const frameB = new THREE.Mesh(
   new THREE.BoxGeometry(BOARD_W+0.1, BOARD_H+0.1, 0.04),
@@ -300,11 +273,10 @@ const board = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ map: boardTex, side: THREE.FrontSide })
 );
 boardGroup.add(board);
-
 boardGroup.position.set(0, 1.9, -roomD/2 + 0.12);
-boardGroup.rotation.y = 0;
-scene.add(boardGroup);
+room3Group.add(boardGroup);
 
+// ── VR CONTROLLERS ──
 const clickableObjects=[];
 const raycaster=new THREE.Raycaster();
 const mouse=new THREE.Vector2();
@@ -328,13 +300,13 @@ const hoverSphere=new THREE.Mesh(
   new THREE.SphereGeometry(0.13,16,16),
   new THREE.MeshBasicMaterial({color:0x00ffcc,transparent:true,opacity:0.35,wireframe:true})
 );
-hoverSphere.visible=false; scene.add(hoverSphere);
+hoverSphere.visible=false; room3Group.add(hoverSphere);
 
 const firstNodeMarker=new THREE.Mesh(
   new THREE.SphereGeometry(0.1,16,16),
   new THREE.MeshBasicMaterial({color:0xffaa00,transparent:true,opacity:0.6,wireframe:true})
 );
-firstNodeMarker.visible=false; scene.add(firstNodeMarker);
+firstNodeMarker.visible=false; room3Group.add(firstNodeMarker);
 
 ctrlR.addEventListener('selectstart', onVRTrigger);
 ctrlR.addEventListener('squeezestart', onVRGripDown);
@@ -355,7 +327,7 @@ renderer.xr.addEventListener('sessionend', () => {
 });
 
 function showVRResult() {
-  drawBoardResult();          
+  drawBoardResult();
   const overlay = document.getElementById('vrResultOverlay');
   if (overlay) {
     const correct=state.correctConns,wrong=state.wrongAttempts,total=TOTAL_CONNS;
@@ -383,7 +355,7 @@ function showVRResult() {
 }
 
 function hideVRResult() {
-  drawBoardIdle();            
+  drawBoardIdle();
   const overlay = document.getElementById('vrResultOverlay');
   if (overlay) overlay.style.display = 'none';
 }
@@ -449,8 +421,8 @@ function showWrongEffect(){
 
 function drawCable(key,cableType){
   const p=state.positions; if(!p.router) return;
-  if(cableObjects[key]){scene.remove(cableObjects[key]);cableObjects[key]=null;}
-  if(cableLabels[key]){scene.remove(cableLabels[key]);cableLabels[key]=null;}
+  if(cableObjects[key]){room3Group.remove(cableObjects[key]);cableObjects[key]=null;}
+  if(cableLabels[key]){room3Group.remove(cableLabels[key]);cableLabels[key]=null;}
   let start,end;
   if(key==='rs'){start=p.router.clone();end=p.switch1.clone();}
   if(key==='sp1'){start=p.switch1.clone();end=p.pc1.clone();}
@@ -475,17 +447,17 @@ function makeFloatingLabel(text,color,position){
   ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,128,34);
   const tex=new THREE.CanvasTexture(c);
   const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
-  sp.scale.set(0.45,0.11,1); sp.position.copy(position); scene.add(sp); return sp;
+  sp.scale.set(0.45,0.11,1); sp.position.copy(position); room3Group.add(sp); return sp;
 }
 
 // ── RESET ──
 function resetCables(){
   ['rs','sp1','sp2','pp'].forEach(k=>{
-    if(cableObjects[k]){scene.remove(cableObjects[k]);cableObjects[k]=null;}
-    if(cableLabels[k]){scene.remove(cableLabels[k]);cableLabels[k]=null;}
+    if(cableObjects[k]){room3Group.remove(cableObjects[k]);cableObjects[k]=null;}
+    if(cableLabels[k]){room3Group.remove(cableLabels[k]);cableLabels[k]=null;}
     state.cables[k]=false;
   });
-  state.packets.forEach(p=>scene.remove(p.mesh)); state.packets.length=0;
+  state.packets.forEach(p=>room3Group.remove(p.mesh)); state.packets.length=0;
   state.activeConn=null; state.vrFirstNode=null;
   state.correctConns=0; state.wrongAttempts=0;
   firstNodeMarker.visible=false;
@@ -499,6 +471,7 @@ window.resetCables=resetCables;
 
 // ── DESKTOP CLICK ──
 renderer.domElement.addEventListener('click',e=>{
+  if(!room3Group.visible) return;
   if(!state.activeConn) return;
   mouse.x=(e.clientX/innerWidth)*2-1;
   mouse.y=-(e.clientY/innerHeight)*2+1;
@@ -513,6 +486,7 @@ renderer.domElement.addEventListener('click',e=>{
 });
 
 renderer.domElement.addEventListener('mousemove',e=>{
+  if(!room3Group.visible) return;
   mouse.x=(e.clientX/innerWidth)*2-1;
   mouse.y=-(e.clientY/innerHeight)*2+1;
   raycaster.setFromCamera(mouse,camera);
@@ -522,6 +496,7 @@ renderer.domElement.addEventListener('mousemove',e=>{
 
 // ── VR TRIGGER ──
 function onVRTrigger(){
+  if(!room3Group.visible) return;
   if(!state.routerOn){setStatus('Router асаана уу! [A]','error');return;}
   if(!state.selectedCableType){setStatus('Кабель төрөл сонгоно уу! [X/Y]','error');return;}
   const hit=vrRayHit(); if(!hit) return;
@@ -549,6 +524,7 @@ function onVRTrigger(){
 }
 
 function onVRGripDown(){
+  if(!room3Group.visible) return;
   const hit=vrRayHit(); if(!hit||!hit.object.userData.nodeName) return;
   state.vrCableHeld=true; state.vrCableStart=hit.object.userData.nodeName;
   state.vrFirstNode=null; firstNodeMarker.visible=false;
@@ -556,9 +532,10 @@ function onVRGripDown(){
 }
 
 function onVRGripUp(){
+  if(!room3Group.visible) return;
   if(!state.vrCableHeld) return;
   state.vrCableHeld=false; rayMat.color.setHex(0x00d4ff);
-  if(state.vrTempCable){scene.remove(state.vrTempCable);state.vrTempCable=null;}
+  if(state.vrTempCable){room3Group.remove(state.vrTempCable);state.vrTempCable=null;}
   const hit=vrRayHit();
   if(!hit||!hit.object.userData.nodeName){setStatus('Холбогдсонгүй','error');state.vrCableStart=null;return;}
   const startNode=state.vrCableStart, endNode=hit.object.userData.nodeName;
@@ -590,6 +567,7 @@ function handleVRGamepad(){
       if(gp.buttons[5]?.pressed&&!vrBtns.Y){vrBtns.Y=true;setCableType('crossover');}else if(!gp.buttons[5]?.pressed)vrBtns.Y=false;
       const ax=gp.axes[2]||0,ay=gp.axes[3]||0;
       if(Math.abs(ax)>0.15||Math.abs(ay)>0.15){
+        const playerRig=state.playerRig; if(!playerRig) return;
         const dir=new THREE.Vector3(); camera.getWorldDirection(dir); dir.y=0; dir.normalize();
         const right=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0));
         playerRig.position.addScaledVector(dir,-ay*state.moveSpeed);
@@ -612,16 +590,16 @@ function updateVRHover(){
     rayLine.geometry.setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,-3)]);
   }
   if(state.vrCableHeld&&state.vrCableStart){
-    if(state.vrTempCable) scene.remove(state.vrTempCable);
+    if(state.vrTempCable) room3Group.remove(state.vrTempCable);
     const sp=state.positions[{router:'router',switch:'switch1',pc1:'pc1',pc2:'pc2'}[state.vrCableStart]];
     if(sp){const ep=new THREE.Vector3();ctrlR.getWorldPosition(ep);state.vrTempCable=makeCableMesh(sp.clone(),ep,state.selectedCableType==='crossover'?0xf97316:0x4ade80);}
   }
   if(state.vrFirstNode&&!state.vrCableHeld){
-    if(state.vrTempCable) scene.remove(state.vrTempCable);
+    if(state.vrTempCable) room3Group.remove(state.vrTempCable);
     const sp=state.positions[{router:'router',switch:'switch1',pc1:'pc1',pc2:'pc2'}[state.vrFirstNode]];
     if(sp){const ep=new THREE.Vector3();ctrlR.getWorldPosition(ep);state.vrTempCable=makeCableMesh(sp.clone(),ep,state.selectedCableType==='crossover'?0xf97316:0x4ade80);}
   } else if(!state.vrCableHeld&&!state.vrFirstNode&&state.vrTempCable){
-    scene.remove(state.vrTempCable);state.vrTempCable=null;
+    room3Group.remove(state.vrTempCable);state.vrTempCable=null;
   }
 }
 
@@ -637,14 +615,14 @@ function vrRayHit(){
 function vrPulse(nodeName){
   const pos=state.positions[{router:'router',switch:'switch1',pc1:'pc1',pc2:'pc2'}[nodeName]]; if(!pos) return;
   const ring=new THREE.Mesh(new THREE.RingGeometry(0.1,0.15,32),new THREE.MeshBasicMaterial({color:0x00d4ff,transparent:true,opacity:0.8,side:THREE.DoubleSide}));
-  ring.position.copy(pos); ring.rotation.x=-Math.PI/2; scene.add(ring);
+  ring.position.copy(pos); ring.rotation.x=-Math.PI/2; room3Group.add(ring);
   let t=0;
-  const anim=()=>{t+=0.04;ring.scale.setScalar(1+t*2);ring.material.opacity=Math.max(0,0.8-t);if(t<1)requestAnimationFrame(anim);else scene.remove(ring);}; anim();
+  const anim=()=>{t+=0.04;ring.scale.setScalar(1+t*2);ring.material.opacity=Math.max(0,0.8-t);if(t<1)requestAnimationFrame(anim);else room3Group.remove(ring);}; anim();
 }
 
 function vrFlash(pos,color){
-  const l=new THREE.PointLight(color,5,2); l.position.copy(pos); scene.add(l);
-  let v=5;const fade=()=>{v-=0.3;l.intensity=v;if(v>0)requestAnimationFrame(fade);else scene.remove(l);};fade();
+  const l=new THREE.PointLight(color,5,2); l.position.copy(pos); room3Group.add(l);
+  let v=5;const fade=()=>{v-=0.3;l.intensity=v;if(v>0)requestAnimationFrame(fade);else room3Group.remove(l);};fade();
 }
 
 // ── CABLE MESH ──
@@ -654,14 +632,14 @@ function makeCableMesh(start,end,color){
   const pts=curve.getPoints(40);
   const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),40,0.016,8,false);
   const mat=new THREE.MeshStandardMaterial({color,emissive:0x000000,emissiveIntensity:0});
-  const mesh=new THREE.Mesh(geo,mat); scene.add(mesh); return mesh;
+  const mesh=new THREE.Mesh(geo,mat); room3Group.add(mesh); return mesh;
 }
 
 // ── DASHED CABLE ──
 const dashedState={segs:[],fillT:0,filling:false,done:false,TOTAL:20};
 
 function buildDashedCable(fromPos,toPos){
-  dashedState.segs.forEach(s=>{scene.remove(s.dash);scene.remove(s.fill)});
+  dashedState.segs.forEach(s=>{room3Group.remove(s.dash);room3Group.remove(s.fill)});
   dashedState.segs=[];
   dashedState.fillT=0; dashedState.filling=false; dashedState.done=false;
   const mid=new THREE.Vector3((fromPos.x+toPos.x)*0.5,Math.max(fromPos.y,toPos.y)+0.2,(fromPos.z+toPos.z)*0.5);
@@ -673,9 +651,9 @@ function buildDashedCable(fromPos,toPos){
     for(let s=0;s<=8;s++) pts.push(curve.getPoint(THREE.MathUtils.clamp(t0+(t1-t0)*(s/8),0,1)));
     const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),8,0.012,6,false);
     const dashMesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:0x445566,transparent:true,opacity:0.5}));
-    scene.add(dashMesh);
+    room3Group.add(dashMesh);
     const fillMesh=new THREE.Mesh(geo.clone(),new THREE.MeshBasicMaterial({color:0x00ff88,transparent:true,opacity:0}));
-    fillMesh.visible=false; scene.add(fillMesh);
+    fillMesh.visible=false; room3Group.add(fillMesh);
     dashedState.segs.push({dash:dashMesh,fill:fillMesh});
   }
 }
@@ -715,7 +693,7 @@ function updateDashedCable(delta){
 }
 
 // ── WIFI + PHONE ──
-const wifiGroup=new THREE.Group(); scene.add(wifiGroup);
+const wifiGroup=new THREE.Group(); room3Group.add(wifiGroup);
 const wifiRings=[]; let wifiPhase=0; let phoneObj=null; let wifiLineMesh=null;
 
 function createWifiRings(rPos){
@@ -733,14 +711,14 @@ function createPhone(rPos){
   const scr=new THREE.Mesh(new THREE.BoxGeometry(0.065,0.13,0.013),new THREE.MeshBasicMaterial({color:0x1a88ff}));
   scr.position.z=0.001; g.add(scr);
   g.position.set(rPos.x+0.5,rPos.y+0.15,rPos.z+0.3); g.rotation.y=-0.5;
-  scene.add(g); return g;
+  room3Group.add(g); return g;
 }
 function createWifiLine(fromPos,toPos){
-  if(wifiLineMesh) scene.remove(wifiLineMesh);
+  if(wifiLineMesh) room3Group.remove(wifiLineMesh);
   const pts=[fromPos.clone().add(new THREE.Vector3(0,0.3,0)),toPos.clone()];
   const geo=new THREE.BufferGeometry().setFromPoints(pts);
   const mat=new THREE.LineDashedMaterial({color:0x00d4ff,dashSize:0.08,gapSize:0.05,transparent:true,opacity:0.8});
-  wifiLineMesh=new THREE.Line(geo,mat); wifiLineMesh.computeLineDistances(); scene.add(wifiLineMesh);
+  wifiLineMesh=new THREE.Line(geo,mat); wifiLineMesh.computeLineDistances(); room3Group.add(wifiLineMesh);
 }
 function updateWifiLine(){
   if(!wifiLineMesh||!phoneObj) return;
@@ -765,54 +743,44 @@ function toggleLight(idx){
   const on=state.lightStates[lk]=!state.lightStates[lk];
   l.bulbMat.color.setHex(on?0xffdd88:0x888888);
   l.bulbMat.emissive.setHex(on?0x442200:0x000000);
-  l.cone.material.opacity=on?0.4:0;
+  if(l.cone) l.cone.material.opacity=on?0.4:0;
   l.light.intensity=on?1.5:0;
-  document.getElementById(`lightBtn${idx}`).classList.toggle('on',on);
+  const btn=document.getElementById(`lightBtn${idx}`);
+  if(btn) btn.classList.toggle('on',on);
   setStatus(`Гэрэл ${idx} ${on?'асааллаа':'унтраалаа'}`,'success');
 }
 window.toggleLight=toggleLight;
 
-// ===== 💡 ТААЗНЫ 2 ГЭРЭЛ =====
+// ── CEILING LIGHTS ──
 function addCeilingLight(x, z) {
   const group = new THREE.Group();
-
-  // Fixture хайрцаг
-  const box = new THREE.Mesh(
-    new THREE.BoxGeometry(0.6, 0.08, 0.6),
-    makeMat(0xeeeeee, 0.4)
-  );
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 0.6), makeMat(0xeeeeee, 0.4));
   box.castShadow = true;
   group.add(box);
-
-  // Гэрлийн панел
   const panel = new THREE.Mesh(
     new THREE.BoxGeometry(0.52, 0.02, 0.52),
     new THREE.MeshStandardMaterial({ color: 0xfffde7, emissive: 0xfffde7, emissiveIntensity: 3.0 })
   );
   panel.position.y = -0.05;
   group.add(panel);
-
-  // Утас
   const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.008,0.008,0.25,6), makeMat(0x333333,0.5));
   wire.position.y = 0.165;
   group.add(wire);
-
   group.position.set(x, roomH - 0.04, z);
-  scene.add(group);
-
-  // Point light
+  room3Group.add(group);
   const light = new THREE.PointLight(0xfffde7, 2.5, 8);
   light.position.set(x, roomH - 0.2, z);
   light.castShadow = true;
   light.shadow.mapSize.width = 512;
   light.shadow.mapSize.height = 512;
   scene.add(light);
-
-  return light;
+  return { group, light, bulbMat: panel.material, cone: null };
 }
 
-const light1 = addCeilingLight(-2, -1);
-const light2 = addCeilingLight(2, -1);
+const ceilLight1 = addCeilingLight(-2, -1);
+const ceilLight2 = addCeilingLight(2, -1);
+state.ceilingLights.light1 = ceilLight1;
+state.ceilingLights.light2 = ceilLight2;
 
 // ── WALL SOCKET ──
 function createWallSocket(pos){
@@ -824,7 +792,7 @@ function createWallSocket(pos){
   });
   const ring=new THREE.Mesh(new THREE.RingGeometry(0.07,0.09,16),new THREE.MeshBasicMaterial({color:0xff4444,side:THREE.DoubleSide,transparent:true,opacity:0}));
   ring.position.z=0.025; g.add(ring); state.powerLight=ring;
-  g.position.copy(pos); scene.add(g);
+  g.position.copy(pos); room3Group.add(g);
 }
 createWallSocket(new THREE.Vector3(-1.38,0.4,-0.2));
 
@@ -834,28 +802,28 @@ function togglePower(){
   const btn=document.getElementById('powerBtn');
   const ind=state.indicators['router'];
   if(state.routerOn){
-    btn.textContent='Router Унтраах'; btn.classList.add('on');
+    if(btn){btn.textContent='Router Унтраах'; btn.classList.add('on');}
     if(ind) ind.material.color.setHex(0x00ff44);
     if(state.powerLight){state.powerLight.material.opacity=0.8;state.powerLight.material.color.setHex(0x00ff44);}
     startDashedFill();
     setStatus('✅ Router асаагдлаа! Кабелийн төрөл сонгоод холбоно уу.','success');
-    document.getElementById('powerStatus').textContent='Router: Асаалттай ✅';
+    const ps=document.getElementById('powerStatus'); if(ps) ps.textContent='Router: Асаалттай ✅';
   } else {
-    btn.textContent='⚡ Router Асаах'; btn.classList.remove('on');
+    if(btn){btn.textContent='⚡ Router Асаах'; btn.classList.remove('on');}
     if(ind) ind.material.color.setHex(0x444444);
     if(state.powerLight) state.powerLight.material.opacity=0;
     stopDashedFill();
-    state.packets.forEach(p=>scene.remove(p.mesh)); state.packets.length=0;
+    state.packets.forEach(p=>room3Group.remove(p.mesh)); state.packets.length=0;
     setStatus('Router унтарлаа.','');
-    document.getElementById('powerStatus').textContent='Router: Унтарсан';
-    document.getElementById('dataStatus').textContent='Өгөгдөл: Зогссон';
+    const ps=document.getElementById('powerStatus'); if(ps) ps.textContent='Router: Унтарсан';
+    const ds=document.getElementById('dataStatus'); if(ds) ds.textContent='Өгөгдөл: Зогссон';
   }
 }
 window.togglePower=togglePower;
 
 function addIndicator(pos,name){
   const l=new THREE.Mesh(new THREE.SphereGeometry(0.04,8,8),new THREE.MeshBasicMaterial({color:0x444444}));
-  l.position.set(pos.x,pos.y+0.25,pos.z); scene.add(l); state.indicators[name]=l;
+  l.position.set(pos.x,pos.y+0.25,pos.z); room3Group.add(l); state.indicators[name]=l;
 }
 
 // ── PACKETS ──
@@ -863,13 +831,13 @@ function spawnPacket(from,to,color){
   const m=new THREE.Mesh(new THREE.SphereGeometry(0.04,8,8),new THREE.MeshBasicMaterial({color}));
   m.position.copy(from);
   m.add(new THREE.Mesh(new THREE.SphereGeometry(0.07,8,8),new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.3})));
-  scene.add(m);
+  room3Group.add(m);
   state.packets.push({mesh:m,from:from.clone(),to:to.clone(),t:0,speed:0.008+Math.random()*0.004});
 }
 function updatePackets(){
   for(let i=state.packets.length-1;i>=0;i--){
     const p=state.packets[i]; p.t+=p.speed;
-    if(p.t>=1){scene.remove(p.mesh);state.packets.splice(i,1);}
+    if(p.t>=1){room3Group.remove(p.mesh);state.packets.splice(i,1);}
     else p.mesh.position.lerpVectors(p.from,p.to,p.t);
   }
 }
@@ -895,23 +863,24 @@ function checkAllConnected(){
   const allDone=state.cables.rs&&state.cables.sp1&&state.cables.sp2&&state.cables.pp&&state.routerOn;
   if(allDone){
     setStatus('🏆 Бүх 4 холболт зөв! Мэдээлэл урсаж байна...','success');
-    document.getElementById('dataStatus').textContent='Өгөгдөл: Идэвхтэй 🟢';
+    const ds=document.getElementById('dataStatus'); if(ds) ds.textContent='Өгөгдөл: Идэвхтэй 🟢';
     ['rs','sp1','sp2','pp'].forEach(k=>{if(cableObjects[k]){cableObjects[k].material.emissive.setHex(0x00aa44);cableObjects[k].material.emissiveIntensity=0.4;}});
     Object.values(state.indicators).forEach(i=>{if(i)i.material.color.setHex(0x00ffcc);});
-    document.getElementById('resultMsg').innerHTML='<span style="color:#00ff88">🏆 Бүх холболт амжилттай!</span>';
+    const rm=document.getElementById('resultMsg'); if(rm) rm.innerHTML='<span style="color:#00ff88">🏆 Бүх холболт амжилттай!</span>';
   } else if(state.cables.rs&&state.cables.sp1&&state.cables.sp2&&state.routerOn){
-    document.getElementById('dataStatus').textContent='Өгөгдөл: Хэсэгчлэн 🟡';
+    const ds=document.getElementById('dataStatus'); if(ds) ds.textContent='Өгөгдөл: Хэсэгчлэн 🟡';
   }
 }
 
 function updateScoreBoard(){
-  document.getElementById('correctCount').textContent=state.correctConns;
-  document.getElementById('wrongCount').textContent=state.wrongAttempts;
+  const cc=document.getElementById('correctCount'); if(cc) cc.textContent=state.correctConns;
+  const wc=document.getElementById('wrongCount'); if(wc) wc.textContent=state.wrongAttempts;
 }
 function updateStatus(){
   const c=Object.values(state.cables).filter(Boolean).length;
-  document.getElementById('cableStatus').textContent=`🔌 Холболт: ${c}/${TOTAL_CONNS}`;
+  const cs=document.getElementById('cableStatus'); if(cs) cs.textContent=`🔌 Холболт: ${c}/${TOTAL_CONNS}`;
 }
+
 // ── GLB LOAD ──
 const loader=new GLTFLoader();
 loader.load('./lab4.glb',gltf=>{
@@ -919,7 +888,7 @@ loader.load('./lab4.glb',gltf=>{
   const box=new THREE.Box3().setFromObject(model);
   const center=new THREE.Vector3(); box.getCenter(center);
   model.position.y-=box.min.y; model.position.x-=center.x; model.position.z-=center.z;
-  scene.add(model);
+  room3Group.add(model);
   const router  =model.getObjectByName('router');
   const switch1 =model.getObjectByName('switch');
   const pc1     =model.getObjectByName('pc1');
@@ -980,6 +949,7 @@ err=>{console.error(err);setStatus('lab4.glb олдсонгүй','error');});
 
 // ── KEYBOARD ──
 window.addEventListener('keydown',e=>{
+  if(!room3Group.visible) return;
   if(e.key==='p'||e.key==='P') togglePower();
   if(e.key==='1') setCableType('straight');
   if(e.key==='2') setCableType('crossover');
@@ -993,24 +963,24 @@ window.addEventListener('keydown',e=>{
 
 // ── HELPERS ──
 function setStatus(msg,type=''){
-  const el=document.getElementById('status'); el.textContent=msg; el.className=type;
+  const el=document.getElementById('status'); if(el){el.textContent=msg; el.className=type;}
 }
 function showTooltip(msg){
-  const el=document.getElementById('tooltip'); el.textContent=msg; el.style.display='block';
+  const el=document.getElementById('tooltip'); if(!el) return;
+  el.textContent=msg; el.style.display='block';
   setTimeout(()=>el.style.display='none',3000);
 }
 
-// ── ANIMATION LOOP ──
-const clock=new THREE.Clock(); let glowPhase=0;
-renderer.setAnimationLoop(()=>{
-  const delta=clock.getDelta();
+// ── UPDATE (main.js-с дуудагдана) ──
+let glowPhase=0;
+room3Group.userData.update = (delta, playerRig) => {
+  if(playerRig) state.playerRig = playerRig;
   if(renderer.xr.isPresenting){
-    controls.enabled=false; handleVRGamepad(); updateVRHover();
+    handleVRGamepad(); updateVRHover();
   } else {
-    controls.enabled=true; hoverSphere.visible=false;
-    if(state.vrTempCable&&!state.vrCableHeld&&!state.vrFirstNode){scene.remove(state.vrTempCable);state.vrTempCable=null;}
+    hoverSphere.visible=false;
+    if(state.vrTempCable&&!state.vrCableHeld&&!state.vrFirstNode){room3Group.remove(state.vrTempCable);state.vrTempCable=null;}
   }
-  controls.update();
   if(state.routerOn){packetTimer+=delta;if(packetTimer>1.2){packetTimer=0;spawnNetworkPackets();}}
   updatePackets();
   updateWifi(delta);
@@ -1023,11 +993,10 @@ renderer.setAnimationLoop(()=>{
     ['rs','sp1','sp2','pp'].forEach(k=>{if(cableObjects[k])cableObjects[k].material.emissiveIntensity=intensity;});
   }
   if(state.routerOn&&state.powerLight) state.powerLight.material.opacity=0.5+0.4*Math.sin(glowPhase*1.5);
-  renderer.render(scene,camera);
-});
+};
 
-window.addEventListener('resize',()=>{
-  camera.aspect=innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
-});
+room3Group.userData.toggleComputer = togglePower;
+
+return room3Group;
+
+} 

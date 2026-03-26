@@ -940,7 +940,7 @@ loader.load('./lab4.glb',gltf=>{
     }
   });
   const textureLoader=new THREE.TextureLoader();
-  const screenTex=textureLoader.load('screen.jpg');
+  const screenTex=textureLoader.load('screen2.jpg');
   [monitor1,monitor2].forEach(m=>{
     if(!m) return;
     m.traverse(o=>{if(o.isMesh){o.material=o.material.clone();o.material.map=screenTex;o.material.emissiveMap=screenTex;o.material.emissive.set(0xffffff);o.material.emissiveIntensity=1;}});

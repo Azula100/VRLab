@@ -58,24 +58,62 @@ mainTvG.add(mainTvBody);
 const mainTvBezel = box(5.0, 2.9, 0.05, 0x111111, 0.15, 0.5);
 mainTvBezel.position.z = -0.035; mainTvG.add(mainTvBezel);
 
-const mainTvScreenMat = new THREE.MeshStandardMaterial({
-  color: 0x050d1a, roughness: 0.05, metalness: 0.1,
-  emissive: 0x0a1630, emissiveIntensity: 0.5
-});
-const mainTvScreen = new THREE.Mesh(new THREE.BoxGeometry(4.8, 2.7, 0.02), mainTvScreenMat);
-mainTvScreen.position.z = -0.05;
+// ── FALLBACK CANVAS — видео байхгүй үед харуулна ──
+const fallbackCanvas = document.createElement('canvas');
+fallbackCanvas.width = 960; fallbackCanvas.height = 540;
+const fctx = fallbackCanvas.getContext('2d');
+const fallbackTex = new THREE.CanvasTexture(fallbackCanvas);
+
+function drawFallback(msg = '📺 lesson1.mp4 хүлээж байна...') {
+  fctx.fillStyle = '#050d1a';
+  fctx.fillRect(0, 0, 960, 540);
+  fctx.strokeStyle = '#1d4ed8';
+  fctx.lineWidth = 6;
+  fctx.strokeRect(10, 10, 940, 520);
+  fctx.fillStyle = '#1d88ff';
+  fctx.font = 'bold 36px Arial';
+  fctx.textAlign = 'center';
+  fctx.textBaseline = 'middle';
+  fctx.fillText(msg, 480, 240);
+  fctx.fillStyle = '#446688';
+  fctx.font = '24px Arial';
+  fctx.fillText('▶ Тоглуулах товч дарна уу', 480, 300);
+  fallbackTex.needsUpdate = true;
+}
+drawFallback();
+
+// ── TV SCREEN — эхэндээ fallback, видео бэлэн болмогц солино ──
+const mainTvScreenMat = new THREE.MeshBasicMaterial({ map: fallbackTex, side: THREE.FrontSide });
+const mainTvScreen = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 2.7), mainTvScreenMat);
+mainTvScreen.position.z = 0.062;   // frame-ийн өмнө гарах
 mainTvScreen.name = 'mainTvScreen';
 mainTvScreen.userData.kind = 'tv';
 mainTvG.add(mainTvScreen);
 
-// ── VIDEO TEXTURE FIX ──
-// VideoTexture-г зөв тохируулна: RGBFormat эсвэл RGBAFormat биш — auto detection
+// ── VIDEO ELEMENT — JS-д шууд үүсгэнэ, DOM-оос хамааралгүй ──
+const videoEl = document.createElement('video');
+videoEl.loop    = false;
+videoEl.muted   = false;   // дуу сонсогдоно
+videoEl.playsInline = true;
+videoEl.crossOrigin = 'anonymous';
+videoEl.style.display = 'none';
+document.body.appendChild(videoEl);
+
 let videoTexture = null;
-const mainTvVideoMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.FrontSide });
-const mainTvVideoPlane = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 2.5), mainTvVideoMat);
-mainTvVideoPlane.position.z = -0.04;
-mainTvVideoPlane.visible = false;
-mainTvG.add(mainTvVideoPlane);
+let tvPlaying    = false;
+
+// VideoTexture үүсгэх — canplay дээр л дуудна
+function setupVideoTexture() {
+  if (videoTexture) { videoTexture.dispose(); videoTexture = null; }
+  videoTexture = new THREE.VideoTexture(videoEl);
+  videoTexture.minFilter    = THREE.LinearFilter;
+  videoTexture.magFilter    = THREE.LinearFilter;
+  videoTexture.generateMipmaps = false;
+  // flipY: true (default) — PlaneGeometry-д зөв, урвуу харагдахгүй
+  videoTexture.flipY        = true;
+  mainTvScreenMat.map       = videoTexture;
+  mainTvScreenMat.needsUpdate = true;
+}
 
 const mainTvPole = box(0.15, 0.6, 0.15, 0x111111, 0.3, 0.6);
 mainTvPole.position.set(0, -1.85, 0); mainTvG.add(mainTvPole);
@@ -349,61 +387,61 @@ function toggleLight() {
 }
 window.toggleLight = toggleLight;
 
+// ── PLAYLIST — статик + динамик файлууд ──
 const STATIC_VIDEOS = [
-  { name: 'Хичээл 1', url: './lesson1.mp4' }
+  { name: 'Хичээл 1', url: new URL('./lesson1.mp4', import.meta.url).href }
 ];
+let playlist = [...STATIC_VIDEOS], currentIdx = 0;
 
-const videoEl = document.getElementById('tvVideo');
-let tvPlaying = false, playlist = [...STATIC_VIDEOS], currentIdx = 0;
+// ── canplay: нэг л удаа дуудна, texture солино ──
+videoEl.addEventListener('canplay', () => {
+  setupVideoTexture();
+  videoEl.play().catch(() => {
+    drawFallback('▶ Тоглуулах товч дарна уу');
+  });
+}, { once: false });   // once:false — шинэ src ачаалах бүрт дахин ажиллана
 
-if (playlist.length > 0) {
-  setTimeout(() => loadTrack(0), 100);
-}
+// ── error: файл олдоогүй ──
+videoEl.addEventListener('error', () => {
+  drawFallback('⚠ ' + (playlist[currentIdx]?.name || 'видео') + ' олдсонгүй');
+  console.warn('room1: видео файл олдсонгүй:', videoEl.src);
+});
 
-// ── VIDEO TEXTURE ЗАСВАР ──
-function setupVideoTexture() {
-  if (!videoEl) return;
+// ── timeupdate: progress bar + texture refresh ──
+videoEl.addEventListener('timeupdate', () => {
+  if (!videoEl.duration) return;
+  const pct = (videoEl.currentTime / videoEl.duration) * 100;
+  const bar = document.getElementById('tvBar');
+  if (bar) bar.style.width = pct + '%';
+  const fmt = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+  const tvTime = document.getElementById('tvTime');
+  if (tvTime) tvTime.textContent = fmt(videoEl.currentTime) + ' / ' + fmt(videoEl.duration);
+  if (videoTexture) videoTexture.needsUpdate = true;
+});
 
-  // Хуучин texture-г устгана
-  if (videoTexture) {
-    videoTexture.dispose();
-    videoTexture = null;
+// ── ended: дараагийн дараах ──
+videoEl.addEventListener('ended', () => {
+  if (currentIdx < playlist.length - 1) {
+    playTrack(currentIdx + 1);
+  } else {
+    tvPlaying = false;
+    updatePlayBtn();
+    updateTVGlow(false);
+    drawFallback('✅ Тоглуулж дууслаа');
+    mainTvScreenMat.map = fallbackTex;
+    mainTvScreenMat.needsUpdate = true;
   }
-
-  // VideoTexture шинээр үүсгэнэ
-  videoTexture = new THREE.VideoTexture(videoEl);
-  videoTexture.minFilter = THREE.LinearFilter;
-  videoTexture.magFilter = THREE.LinearFilter;
-  // format-г тодорхой зааж өгөхгүй — Three.js автоматаар тодорхойлно
-  // (THREE.RGBAFormat биш, энэ нь alpha суваг шаарддаг тул гажуудна)
-  videoTexture.generateMipmaps = false;
-  videoTexture.flipY = false; // видео texture дээрээс доошоо байна — урвуу болохоос сэргийлнэ
-
-  // Material-г шинэчилнэ
-  mainTvVideoMat.map = videoTexture;
-  mainTvVideoMat.color.set(0xffffff);
-  mainTvVideoMat.needsUpdate = true;
-
-  // Видео plane харагдахаар болгоно
-  mainTvVideoPlane.visible = true;
-  mainTvScreenMat.emissiveIntensity = 0.05;
-}
+});
 
 function loadTrack(idx) {
-  if (!playlist.length || !videoEl) return;
+  if (!playlist.length) return;
   currentIdx = idx;
+  // src солих — canplay event автоматаар дуудагдана
   videoEl.src = playlist[idx].url;
   videoEl.load();
-
-  // Metadata ачаалагдсаны дараа texture тохируулна — энэ нь гол засвар!
-  videoEl.onloadedmetadata = () => {
-    setupVideoTexture();
-  };
-  // Хэрэв metadata аль хэдийн байвал шууд дуудна
-  if (videoEl.readyState >= 1) {
-    setupVideoTexture();
-  }
-
+  drawFallback('⏳ ' + playlist[idx].name + ' ачааллаж байна...');
+  mainTvScreenMat.map = fallbackTex;
+  mainTvScreenMat.needsUpdate = true;
   const ti = document.getElementById('trackInfo');
   if (ti) ti.textContent = '🎬 ' + playlist[idx].name;
   renderPlaylist();
@@ -413,20 +451,23 @@ function renderPlaylist() {
   const pl = document.getElementById('playlist');
   if (!pl) return;
   pl.innerHTML = playlist.map((t, i) =>
-    `<div class="pl-item${i===currentIdx?' active':''}" onclick="playTrack(${i})">
-      ${i===currentIdx?'▶ ':''}${t.name}
+    `<div class="pl-item${i === currentIdx ? ' active' : ''}" onclick="playTrack(${i})">
+      ${i === currentIdx ? '▶ ' : ''}${t.name}
     </div>`
   ).join('');
 }
 
 function playTrack(idx) {
   loadTrack(idx);
-  videoEl.play().catch(() => {});
+  // play() нь canplay event-ийн дараа л ажиллана — loadTrack дотор автомат
   tvPlaying = true; updatePlayBtn(); updateTVGlow(true);
 }
 window.playTrack = playTrack;
 
-// Файл оруулах
+// Эхний track-г ачаална
+setTimeout(() => loadTrack(0), 100);
+
+// ── Файл оруулах (динамик нэмэлт) ──
 const fileInput = document.getElementById('fileInput');
 if (fileInput) {
   fileInput.addEventListener('change', (e) => {
@@ -437,39 +478,8 @@ if (fileInput) {
       url: URL.createObjectURL(f)
     }));
     playlist = [...STATIC_VIDEOS, ...newTracks];
-    currentIdx = STATIC_VIDEOS.length;
     renderPlaylist();
-    loadTrack(currentIdx);
-    videoEl.play().catch(() => {});
-    tvPlaying = true; updatePlayBtn(); updateTVGlow(true);
-  });
-}
-
-if (videoEl) {
-  videoEl.addEventListener('timeupdate', () => {
-    if (!videoEl.duration) return;
-    const pct = (videoEl.currentTime / videoEl.duration) * 100;
-    const bar = document.getElementById('tvBar');
-    if (bar) bar.style.width = pct + '%';
-    const fmt = s => Math.floor(s/60) + ':' + String(Math.floor(s%60)).padStart(2,'0');
-    const tvTime = document.getElementById('tvTime');
-    if (tvTime) tvTime.textContent = fmt(videoEl.currentTime) + ' / ' + fmt(videoEl.duration);
-    // Texture-г update хийнэ — энэ нь ЗААВАЛ байх ёстой!
-    if (videoTexture) videoTexture.needsUpdate = true;
-  });
-
-  // canplay event дээр texture тохируулна — энэ нь хамгийн найдвартай арга
-  videoEl.addEventListener('canplay', () => {
-    setupVideoTexture();
-  });
-
-  videoEl.addEventListener('ended', () => {
-    if (currentIdx < playlist.length - 1) { playTrack(currentIdx + 1); }
-    else {
-      tvPlaying = false; updatePlayBtn(); updateTVGlow(false);
-      mainTvVideoPlane.visible = false;
-      mainTvScreenMat.emissiveIntensity = 0.5;
-    }
+    playTrack(STATIC_VIDEOS.length);
   });
 }
 
@@ -483,9 +493,15 @@ function updateTVGlow(on) {
 }
 
 window.audioPlayPause = () => {
-  if (!videoEl) return;
-  if (videoEl.paused) { videoEl.play().catch(()=>{}); tvPlaying = true; }
-  else { videoEl.pause(); tvPlaying = false; }
+  if (videoEl.readyState >= 2) {
+    if (videoEl.paused) { videoEl.play().catch(() => {}); tvPlaying = true; }
+    else { videoEl.pause(); tvPlaying = false; }
+  } else {
+    // Бэлэн болоогүй бол дахин load хийж тоглуулна
+    videoEl.load();
+    videoEl.addEventListener('canplay', () => videoEl.play().catch(() => {}), { once: true });
+    tvPlaying = true;
+  }
   updatePlayBtn(); updateTVGlow(tvPlaying);
 };
 window.audioPrev = () => { if (playlist.length) playTrack((currentIdx - 1 + playlist.length) % playlist.length); };
@@ -526,15 +542,12 @@ room1Group.userData.update = (delta) => {
   if (Math.abs(diff) > 0.005) doorCurrent += diff * 0.08;
   doorPivot.rotation.y = doorCurrent;
 
-  // TV screen glow pulse
-  if (!mainTvVideoPlane.visible) {
-    mainTvScreenMat.emissiveIntensity = 0.4 + Math.sin(t * 1.2) * 0.08;
-  }
-
-  // Видео тоглуулж байвал texture-г тогтмол шинэчилнэ
-  if (tvPlaying && videoTexture && videoEl && !videoEl.paused) {
+  // TV screen glow — тоглуулж байвал pulse, байхгүй бол тайван
+  if (tvPlaying && videoTexture && !videoEl.paused) {
     videoTexture.needsUpdate = true;
     mainTvLight.intensity = 2.8 + Math.sin(t * 6) * 0.5;
+  } else if (!tvPlaying) {
+    mainTvLight.intensity = 1.2 + Math.sin(t * 1.2) * 0.15;
   }
 
   // Clock second hand

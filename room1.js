@@ -68,9 +68,10 @@ mainTvScreen.name = 'mainTvScreen';
 mainTvScreen.userData.kind = 'tv';
 mainTvG.add(mainTvScreen);
 
-// Video texture plane — 3D дэлгэцэн дээр видео харуулна
+// ── VIDEO TEXTURE FIX ──
+// VideoTexture-г зөв тохируулна: RGBFormat эсвэл RGBAFormat биш — auto detection
 let videoTexture = null;
-const mainTvVideoMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+const mainTvVideoMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.FrontSide });
 const mainTvVideoPlane = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 2.5), mainTvVideoMat);
 mainTvVideoPlane.position.z = -0.04;
 mainTvVideoPlane.visible = false;
@@ -90,10 +91,11 @@ room1Group.add(mainTvG);
 const mainTvLight = new THREE.PointLight(0x1d4ed8, 1.5, 8);
 mainTvLight.position.set(0, 2.9, -roomD / 2 + 1.0);
 room1Group.add(mainTvLight);
-// document.getElementById('btnPlayPause').addEventListener('click', () => {
-//   videoEl.play().catch(e => console.error('Autoplay blocked:', e));
-// });
-// ── STUDENT DESKS ──
+
+// ── STUDENT DESKS + SEAT INTERACTION ──
+// Сандлуудыг хадгалах массив — raycast-д ашиглана
+const seatMeshes = [];   // { mesh, worldPos, deskX, deskZ }
+
 function addDesk(x, z) {
   const dm = mat(0x8B6914, 0.7), lm = mat(0x2a2a2a, 0.4, 0.4);
   const top = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.05, 0.6), dm);
@@ -103,8 +105,13 @@ function addDesk(x, z) {
     l.position.set(x+dx, 0.375, z+dz); room1Group.add(l);
   });
   const seatZ = z + 0.58;
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.45), dm);
-  seat.position.set(x, 0.46, seatZ); room1Group.add(seat);
+  const seatMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.45), dm);
+  seatMesh.position.set(x, 0.46, seatZ);
+  seatMesh.userData.kind = 'seat';
+  seatMesh.userData.seatWorldPos = new THREE.Vector3(x, 0.46, seatZ);
+  room1Group.add(seatMesh);
+  seatMeshes.push(seatMesh);
+
   const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.38, 0.04), dm);
   back.position.set(x, 0.67, seatZ+0.205); room1Group.add(back);
   [[0.21,0.19],[0.21,-0.19],[-0.21,0.19],[-0.21,-0.19]].forEach(([dx,dz]) => {
@@ -113,6 +120,130 @@ function addDesk(x, z) {
   });
 }
 [[-2,1],[-2,-1],[-2,-3],[0,1],[0,-1],[0,-3],[2,1],[2,-1],[2,-3]].forEach(([x,z]) => addDesk(x,z));
+
+// ── SITTING STATE ──
+let isSitting = false;
+let currentSeat = null;
+let standingCameraPos = new THREE.Vector3();  // босоо байрлал хадгалах
+let standingCameraRot = new THREE.Euler();
+
+// Камерын өндрийн тохиргоо
+const STAND_HEIGHT = 1.7;   // зогсож буй нүдний өндөр
+const SIT_HEIGHT   = 0.85;  // суугаа нүдний өндөр (сандлын өндөр + 0.4)
+
+function sitDown(seatMesh) {
+  if (isSitting && currentSeat === seatMesh) {
+    // Аль хэдийн энэ сандалд суусан бол босно
+    standUp();
+    return;
+  }
+  // Босоо байрлал хадгал
+  standingCameraPos.copy(camera.position);
+  standingCameraRot.copy(camera.rotation);
+
+  const wp = seatMesh.userData.seatWorldPos;
+  // Камерыг сандал руу шилжүүлнэ — сандлаас арагш бага зэрэг
+  camera.position.set(wp.x, SIT_HEIGHT, wp.z + 0.3);
+  // TV рүү харах
+  camera.lookAt(0, 2.0, -roomD / 2);
+
+  isSitting = true;
+  currentSeat = seatMesh;
+
+  // Highlight: суусан сандлыг ногоонооор тодруулна
+  seatMeshes.forEach(s => {
+    s.material.emissive = new THREE.Color(0x000000);
+    s.material.emissiveIntensity = 0;
+  });
+  seatMesh.material = seatMesh.material.clone();
+  seatMesh.material.emissive = new THREE.Color(0x00ff88);
+  seatMesh.material.emissiveIntensity = 0.3;
+
+  showHint('🪑 Суусан! [Дахин дарж босоорой]');
+}
+
+function standUp() {
+  if (!isSitting) return;
+  // Буцаж босоо байрлалд оч
+  camera.position.copy(standingCameraPos);
+  camera.rotation.copy(standingCameraRot);
+
+  // Highlight арилгах
+  if (currentSeat) {
+    currentSeat.material.emissive = new THREE.Color(0x000000);
+    currentSeat.material.emissiveIntensity = 0;
+  }
+
+  isSitting = false;
+  currentSeat = null;
+  showHint('');
+}
+window.standUp = standUp;
+
+// Hint UI
+function showHint(msg) {
+  let hint = document.getElementById('seatHint');
+  if (!hint) {
+    hint = document.createElement('div');
+    hint.id = 'seatHint';
+    hint.style.cssText = `
+      position:fixed; bottom:100px; left:50%; transform:translateX(-50%);
+      background:rgba(0,0,0,0.75); color:#fff; padding:10px 20px;
+      border-radius:8px; font-size:15px; pointer-events:none;
+      transition:opacity 0.3s; z-index:1000;
+    `;
+    document.body.appendChild(hint);
+  }
+  hint.textContent = msg;
+  hint.style.opacity = msg ? '1' : '0';
+}
+
+// ── CLICK / RAYCAST HANDLER ──
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+function onCanvasClick(event) {
+  const canvas = renderer.domElement;
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width)  * 2 - 1;
+  mouse.y = -((event.clientY - rect.top)  / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(seatMeshes, false);
+  if (hits.length > 0) {
+    sitDown(hits[0].object);
+    return;
+  }
+  // Сандал дээр биш дарвал — хэрэв суусан бол босно
+  // (энийг хүссэн бол идэвхжүүлж болно)
+  // if (isSitting) standUp();
+}
+
+// Hover effect — сандал дээр хулганаа аваачихад cursor өөрчлөгдөнө
+function onCanvasMove(event) {
+  const canvas = renderer.domElement;
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width)  * 2 - 1;
+  mouse.y = -((event.clientY - rect.top)  / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(seatMeshes, false);
+  canvas.style.cursor = hits.length > 0 ? 'pointer' : 'default';
+
+  // Hover highlight
+  seatMeshes.forEach(s => {
+    if (s !== currentSeat) {
+      s.material.emissiveIntensity = 0;
+    }
+  });
+  if (hits.length > 0 && hits[0].object !== currentSeat) {
+    hits[0].object.material.emissive = new THREE.Color(0xffff00);
+    hits[0].object.material.emissiveIntensity = 0.2;
+  }
+}
+
+renderer.domElement.addEventListener('click', onCanvasClick);
+renderer.domElement.addEventListener('mousemove', onCanvasMove);
 
 // ── TEACHER DESK ──
 const td = box(2.2, 0.07, 0.85, 0x5d3a0a, 0.6);
@@ -134,15 +265,12 @@ tcBack.position.set(0, 0.77, 0.25); tcGroup.add(tcBack);
   const cl = box(0.05, 0.5, 0.05, 0x0a1a3a, 0.4, 0.3);
   cl.position.set(dx, 0.25, dz); tcGroup.add(cl);
 });
-
-// ✅ ЗАСВАРЛАСАН: Object.assign → position.set() болгов
 const armR = box(0.04, 0.04, 0.35, 0x0a1a3a, 0.4, 0.3);
 armR.position.set(0.3, 0.65, 0);
 tcGroup.add(armR);
 const armL = box(0.04, 0.04, 0.35, 0x0a1a3a, 0.4, 0.3);
 armL.position.set(-0.3, 0.65, 0);
 tcGroup.add(armL);
-
 room1Group.add(tcGroup);
 
 // Book + Laptop
@@ -221,33 +349,42 @@ function toggleLight() {
 }
 window.toggleLight = toggleLight;
 
-// ── VIDEO PLAYER ──
-// ✅ СТАТИК ВИДЕО: public/videos/ фолдерт mp4 файлаа хийнэ үү
-// Жишээ нь: public/videos/lesson1.mp4, public/videos/lesson2.mp4
 const STATIC_VIDEOS = [
   { name: 'Хичээл 1', url: './lesson1.mp4' }
-  // { name: 'Хичээл 2', url: '/videos/lesson2.mp4' },
-  // Өөрийн видеонуудыг энд нэмнэ үү ↑
 ];
 
 const videoEl = document.getElementById('tvVideo');
 let tvPlaying = false, playlist = [...STATIC_VIDEOS], currentIdx = 0;
 
-// Статик видео байвал автоматаар дэлгэцэнд ачаална
 if (playlist.length > 0) {
-  // DOM бэлэн болсны дараа ачаалах
   setTimeout(() => loadTrack(0), 100);
 }
 
+// ── VIDEO TEXTURE ЗАСВАР ──
 function setupVideoTexture() {
-  if (videoTexture) videoTexture.dispose();
+  if (!videoEl) return;
+
+  // Хуучин texture-г устгана
+  if (videoTexture) {
+    videoTexture.dispose();
+    videoTexture = null;
+  }
+
+  // VideoTexture шинээр үүсгэнэ
   videoTexture = new THREE.VideoTexture(videoEl);
   videoTexture.minFilter = THREE.LinearFilter;
   videoTexture.magFilter = THREE.LinearFilter;
-  videoTexture.format = THREE.RGBAFormat;
+  // format-г тодорхой зааж өгөхгүй — Three.js автоматаар тодорхойлно
+  // (THREE.RGBAFormat биш, энэ нь alpha суваг шаарддаг тул гажуудна)
+  videoTexture.generateMipmaps = false;
+  videoTexture.flipY = false; // видео texture дээрээс доошоо байна — урвуу болохоос сэргийлнэ
+
+  // Material-г шинэчилнэ
   mainTvVideoMat.map = videoTexture;
   mainTvVideoMat.color.set(0xffffff);
   mainTvVideoMat.needsUpdate = true;
+
+  // Видео plane харагдахаар болгоно
   mainTvVideoPlane.visible = true;
   mainTvScreenMat.emissiveIntensity = 0.05;
 }
@@ -257,7 +394,16 @@ function loadTrack(idx) {
   currentIdx = idx;
   videoEl.src = playlist[idx].url;
   videoEl.load();
-  setupVideoTexture();
+
+  // Metadata ачаалагдсаны дараа texture тохируулна — энэ нь гол засвар!
+  videoEl.onloadedmetadata = () => {
+    setupVideoTexture();
+  };
+  // Хэрэв metadata аль хэдийн байвал шууд дуудна
+  if (videoEl.readyState >= 1) {
+    setupVideoTexture();
+  }
+
   const ti = document.getElementById('trackInfo');
   if (ti) ti.textContent = '🎬 ' + playlist[idx].name;
   renderPlaylist();
@@ -280,7 +426,7 @@ function playTrack(idx) {
 }
 window.playTrack = playTrack;
 
-// ✅ Файл оруулах — динамик нэмэлт (Статик видеод нэмэгдэнэ)
+// Файл оруулах
 const fileInput = document.getElementById('fileInput');
 if (fileInput) {
   fileInput.addEventListener('change', (e) => {
@@ -291,7 +437,7 @@ if (fileInput) {
       url: URL.createObjectURL(f)
     }));
     playlist = [...STATIC_VIDEOS, ...newTracks];
-    currentIdx = STATIC_VIDEOS.length; // Шинэ файлаас эхлэх
+    currentIdx = STATIC_VIDEOS.length;
     renderPlaylist();
     loadTrack(currentIdx);
     videoEl.play().catch(() => {});
@@ -308,8 +454,15 @@ if (videoEl) {
     const fmt = s => Math.floor(s/60) + ':' + String(Math.floor(s%60)).padStart(2,'0');
     const tvTime = document.getElementById('tvTime');
     if (tvTime) tvTime.textContent = fmt(videoEl.currentTime) + ' / ' + fmt(videoEl.duration);
+    // Texture-г update хийнэ — энэ нь ЗААВАЛ байх ёстой!
     if (videoTexture) videoTexture.needsUpdate = true;
   });
+
+  // canplay event дээр texture тохируулна — энэ нь хамгийн найдвартай арга
+  videoEl.addEventListener('canplay', () => {
+    setupVideoTexture();
+  });
+
   videoEl.addEventListener('ended', () => {
     if (currentIdx < playlist.length - 1) { playTrack(currentIdx + 1); }
     else {
@@ -363,7 +516,7 @@ function toggleVideo() {
 }
 room1Group.userData.toggleVideo = toggleVideo;
 
-// ── UPDATE (main.js animate loop-оос дуудагдана) ──
+// ── UPDATE LOOP ──
 let t = 0;
 room1Group.userData.update = (delta) => {
   t += delta;
@@ -377,14 +530,24 @@ room1Group.userData.update = (delta) => {
   if (!mainTvVideoPlane.visible) {
     mainTvScreenMat.emissiveIntensity = 0.4 + Math.sin(t * 1.2) * 0.08;
   }
-  if (tvPlaying && videoTexture) {
-    mainTvLight.intensity = 2.8 + Math.sin(t * 6) * 0.5;
+
+  // Видео тоглуулж байвал texture-г тогтмол шинэчилнэ
+  if (tvPlaying && videoTexture && videoEl && !videoEl.paused) {
     videoTexture.needsUpdate = true;
+    mainTvLight.intensity = 2.8 + Math.sin(t * 6) * 0.5;
   }
 
   // Clock second hand
   const s = new Date().getSeconds();
   secHand.rotation.z = -(s / 60) * Math.PI * 2;
+};
+
+// Cleanup function — өрөө солигдоход event listener-г арилгана
+room1Group.userData.dispose = () => {
+  renderer.domElement.removeEventListener('click', onCanvasClick);
+  renderer.domElement.removeEventListener('mousemove', onCanvasMove);
+  const hint = document.getElementById('seatHint');
+  if (hint) hint.remove();
 };
 
 return room1Group;

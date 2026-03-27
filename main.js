@@ -8,7 +8,7 @@ import { createRoom3 } from "./room3.js";
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x202533);
 
-const camera = new THREE.PerspectiveCamera(75,window.innerWidth / window.innerHeight,0.1,1000);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 1.6, 4);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -25,27 +25,22 @@ function initOrbitControls() {
         orbitControls.dispose();
         orbitControls = null;
     }
-    
     orbitControls = new OrbitControls(camera, renderer.domElement);
-    orbitControls.enableDamping = true; // Smooth damping
+    orbitControls.enableDamping = true;
     orbitControls.dampingFactor = 0.05;
     orbitControls.rotateSpeed = 1.0;
     orbitControls.zoomSpeed = 1.2;
     orbitControls.panSpeed = 0.8;
-    orbitControls.screenSpacePanning = true; 
-    orbitControls.maxPolarAngle = Math.PI / 2; 
+    orbitControls.screenSpacePanning = true;
+    orbitControls.maxPolarAngle = Math.PI / 2;
     orbitControls.target.set(0, 1.6, 0);
-    
+
     renderer.xr.addEventListener('sessionstart', () => {
-        if (orbitControls) {
-            orbitControls.enabled = false;
-        }
+        if (orbitControls) orbitControls.enabled = false;
     });
-    
     renderer.xr.addEventListener('sessionend', () => {
         if (orbitControls) {
             orbitControls.enabled = true;
-            // Reset camera position when exiting VR
             camera.position.set(0, 1.6, 4);
             orbitControls.target.set(0, 1.6, 0);
             orbitControls.update();
@@ -60,12 +55,8 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
 const dirLight = new THREE.DirectionalLight(0xffffff, 1);
 dirLight.position.set(5, 10, 5);
 dirLight.castShadow = true;
-dirLight.receiveShadow = true;
 scene.add(dirLight);
-
-// Ambient light for better visibility
-const ambientLight = new THREE.AmbientLight(0x404040);
-scene.add(ambientLight);
+scene.add(new THREE.AmbientLight(0x404040));
 
 const gridHelper = new THREE.GridHelper(20, 20, 0x888888, 0x444444);
 gridHelper.position.y = -0.01;
@@ -82,19 +73,17 @@ const room3 = createRoom3(scene, camera, renderer);
 room2.visible = false;
 room3.visible = false;
 
-// Current active room reference
 let currentRoom = room1;
 
 window.goRoom = (n) => {
-    // Update visibility
     room1.visible = (n === 1);
     room2.visible = (n === 2);
     room3.visible = (n === 3);
-    
+
     if (n === 1) currentRoom = room1;
     else if (n === 2) currentRoom = room2;
     else if (n === 3) currentRoom = room3;
-    
+
     if (renderer.xr.isPresenting) {
         playerRig.position.set(0, 0, 0);
         if (orbitControls) orbitControls.enabled = false;
@@ -106,76 +95,35 @@ window.goRoom = (n) => {
         }
         camera.lookAt(0, 0, 0);
     }
-    
+
     const names = { 1: 'Лекцийн өрөө', 2: 'Семинарын өрөө', 3: 'Лабораторийн өрөө' };
     console.log(`→ ${names[n]} руу шилжлээ`);
 };
 
-const controllers = [];
-const laserLines = [];
-
-for (let i = 0; i < 2; i++) {
-    const controller = renderer.xr.getController(i);
-    scene.add(controller);
-    controllers.push(controller);
-    
-    // Laser pointer
-    const laserGeo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, 0, -1)
-    ]);
-    const laserLine = new THREE.Line(
-        laserGeo,
-        new THREE.LineBasicMaterial({ color: 0x00ffcc })
-    );
-    laserLine.scale.z = 15;
-    controller.add(laserLine);
-    laserLines.push(laserLine);
-    
-    // Optional: Add a small sphere at the tip for better visibility
-    const tipGeometry = new THREE.SphereGeometry(0.02, 8, 8);
-    const tipMaterial = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00aa88 });
-    const tip = new THREE.Mesh(tipGeometry, tipMaterial);
-    tip.position.set(0, 0, -1);
-    controller.add(tip);
+// ── RAYCASTING HELPER ──
+// ✅ Бүх давхаргыг recursive шалгана (TV group доторх screen-г олно)
+function getInteractiveObjects(room) {
+    const result = [];
+    room.traverse((obj) => {
+        if (obj.userData?.kind || obj.userData?.interactive || obj.userData?.teleport) {
+            result.push(obj);
+        }
+    });
+    return result;
 }
 
-const tempMatrix = new THREE.Matrix4();
-const raycasterVR = new THREE.Raycaster();
-
-function handleVRControllerInteraction(controller, eventType) {
-    if (eventType !== "selectstart") return;
-    
-    tempMatrix.identity().extractRotation(controller.matrixWorld);
-    raycasterVR.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-    raycasterVR.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-    
-    // Get all interactive objects in current room
-    const interactiveObjects = [];
-    currentRoom.children.forEach(child => {
-        if (child.userData?.interactive || child.userData?.kind) {
-            interactiveObjects.push(child);
-        }
-        // Also check children recursively
-        child.children?.forEach(grandChild => {
-            if (grandChild.userData?.interactive || grandChild.userData?.kind) {
-                interactiveObjects.push(grandChild);
-            }
-        });
-    });
-    
-    const hits = raycasterVR.intersectObjects(interactiveObjects, true);
-    if (!hits.length) return;
-    
-    // Find the actual interactive object
-    let obj = hits[0].object;
-    while (obj && !obj.userData?.kind && !obj.userData?.interactive) {
-        obj = obj.parent;
+// ── TV TOGGLE HELPER ──
+// ✅ room1-д TV байгаа тул room1.userData.toggleVideo дуудна
+function handleTVInteraction() {
+    if (currentRoom === room1 && room1.userData.toggleVideo) {
+        room1.userData.toggleVideo();
+    } else if (currentRoom === room2 && room2.userData.toggleVideo) {
+        room2.userData.toggleVideo();
     }
-    if (!obj) return;
-    
-    const kind = obj.userData.kind;
-    
+}
+
+// ── KIND HANDLER (хоёуланд ашиглана) ──
+function handleKind(kind, obj, point, isVR = false) {
     if (kind === "door") {
         window.goRoom(2);
         return;
@@ -190,7 +138,7 @@ function handleVRControllerInteraction(controller, eventType) {
         return;
     }
     if (kind === "teacherChair") {
-        if (renderer.xr.isPresenting) {
+        if (isVR) {
             playerRig.position.set(-3, 0, 4.22);
         } else {
             camera.position.set(-3, 1.2, 4.22);
@@ -201,17 +149,17 @@ function handleVRControllerInteraction(controller, eventType) {
         }
         return;
     }
+    // ✅ ЗАСВАРЛАСАН: room1-ийн TV → room1.userData.toggleVideo дуудна
     if (kind === "tv") {
-        if (room2.userData.toggleVideo) room2.userData.toggleVideo();
+        handleTVInteraction();
         return;
     }
     if (kind === "computer") {
         if (room3.userData.toggleComputer) room3.userData.toggleComputer();
         return;
     }
-    if (obj.userData?.teleport) {
-        const point = hits[0].point;
-        if (renderer.xr.isPresenting) {
+    if (obj.userData?.teleport && point) {
+        if (isVR) {
             playerRig.position.set(point.x, 0, point.z);
         } else {
             camera.position.set(point.x, 1.6, point.z);
@@ -222,135 +170,129 @@ function handleVRControllerInteraction(controller, eventType) {
         }
         return;
     }
-    
+}
+
+// ── VR CONTROLLERS ──
+const controllers = [];
+const laserLines = [];
+const tempMatrix = new THREE.Matrix4();
+const raycasterVR = new THREE.Raycaster();
+
+for (let i = 0; i < 2; i++) {
+    const controller = renderer.xr.getController(i);
+    scene.add(controller);
+    controllers.push(controller);
+
+    const laserGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, -1)
+    ]);
+    const laserLine = new THREE.Line(laserGeo, new THREE.LineBasicMaterial({ color: 0x00ffcc }));
+    laserLine.scale.z = 15;
+    controller.add(laserLine);
+    laserLines.push(laserLine);
+
+    const tip = new THREE.Mesh(
+        new THREE.SphereGeometry(0.02, 8, 8),
+        new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00aa88 })
+    );
+    tip.position.set(0, 0, -1);
+    controller.add(tip);
+}
+
+function handleVRControllerInteraction(controller, eventType) {
+    if (eventType !== "selectstart") return;
+
+    tempMatrix.identity().extractRotation(controller.matrixWorld);
+    raycasterVR.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    raycasterVR.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+    // ✅ traverse ашиглан бүх объектыг авна
+    const interactiveObjects = getInteractiveObjects(currentRoom);
+    const hits = raycasterVR.intersectObjects(interactiveObjects, true);
+    if (!hits.length) return;
+
+    let obj = hits[0].object;
+    while (obj && !obj.userData?.kind && !obj.userData?.interactive && !obj.userData?.teleport) {
+        obj = obj.parent;
+    }
+    if (!obj) return;
+
+    handleKind(obj.userData.kind, obj, hits[0].point, true);
+
     if (currentRoom === room3 && room3.userData.onVRSelect) {
         room3.userData.onVRSelect(obj, hits[0].point);
     }
 }
 
-// Add event listeners to both controllers
 controllers.forEach(controller => {
     controller.addEventListener("selectstart", (event) => {
         handleVRControllerInteraction(controller, "selectstart");
     });
 });
 
+// ── MOUSE CLICK ──
 const mouse = new THREE.Vector2();
 const raycasterMouse = new THREE.Raycaster();
 
 window.addEventListener("click", (event) => {
-    if (orbitControls && orbitControls.enabled && !renderer.xr.isPresenting) {}
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.x =  (event.clientX / window.innerWidth)  * 2 - 1;
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     raycasterMouse.setFromCamera(mouse, camera);
-    
-    const interactiveObjects = [];
-    currentRoom.children.forEach(child => {
-        if (child.userData?.interactive || child.userData?.kind) {
-            interactiveObjects.push(child);
-        }
-        child.children?.forEach(grandChild => {
-            if (grandChild.userData?.interactive || grandChild.userData?.kind) {
-                interactiveObjects.push(grandChild);
-            }
-        });
-    });
-    
+
+    // ✅ traverse ашиглан бүх объектыг авна
+    const interactiveObjects = getInteractiveObjects(currentRoom);
     const hits = raycasterMouse.intersectObjects(interactiveObjects, true);
     if (!hits.length) return;
-    
+
     let obj = hits[0].object;
-    while (obj && !obj.userData?.kind && !obj.userData?.interactive) {
+    while (obj && !obj.userData?.kind && !obj.userData?.interactive && !obj.userData?.teleport) {
         obj = obj.parent;
     }
     if (!obj) return;
-    
-    const kind = obj.userData.kind;
-    
-    if (kind === "door") {
-        window.goRoom(2);
-        return;
-    }
-    if (kind === "labDoor") {
-        window.goRoom(3);
-        return;
-    }
-    if (kind === "backDoor") {
-        if (room2.visible) window.goRoom(1);
-        if (room3.visible) window.goRoom(2);
-        return;
-    }
-    if (kind === "teacherChair") {
-        camera.position.set(-3, 1.2, 4.22);
-        if (orbitControls) {
-            orbitControls.target.set(-3, 1.2, 4.22);
-            orbitControls.update();
-        }
-        return;
-    }
-    if (kind === "tv") {
-        if (room2.userData.toggleVideo) room2.userData.toggleVideo();
-        return;
-    }
-    
-    // Room3 specific mouse interactions
+
+    handleKind(obj.userData.kind, obj, hits[0].point, false);
+
     if (room3.visible && room3.userData.onClick) {
         room3.userData.onClick(raycasterMouse);
     }
 });
+
+// ── KEYBOARD ──
 window.addEventListener("keydown", (e) => {
-    if (room3.userData.onKey) {
-        room3.userData.onKey(e.key);
-    }
-    
-    // Keyboard shortcuts for room switching
-    if (e.key === '1') window.goRoom(1);
-    if (e.key === '2') window.goRoom(2);
-    if (e.key === '3') window.goRoom(3);
-    
-    // Toggle orbit controls helper (for debugging)
+    if (room3.userData.onKey) room3.userData.onKey(e.key);
+    if (e.key === 'F1') window.goRoom(1);
+    if (e.key === 'F2') window.goRoom(2);
+    if (e.key === 'F3') window.goRoom(3);
     if (e.key === 'h' && !renderer.xr.isPresenting) {
         gridHelper.visible = !gridHelper.visible;
     }
 });
+
 window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    
-    if (orbitControls) {
-        orbitControls.update();
-    }
+    if (orbitControls) orbitControls.update();
 });
+
+// ── ANIMATE LOOP ──
 renderer.setAnimationLoop(() => {
     const delta = clock.getDelta();
-    
-    // Update orbit controls if enabled and not in VR
+
     if (orbitControls && orbitControls.enabled && !renderer.xr.isPresenting) {
         orbitControls.update();
     }
-    
-    // Update current room
-    if (currentRoom === room1 && room1.userData.update) {
-        room1.userData.update(delta, playerRig);
-    }
-    if (currentRoom === room2 && room2.userData.update) {
-        room2.userData.update(delta, playerRig);
-    }
-    if (currentRoom === room3 && room3.userData.update) {
-        room3.userData.update(delta, playerRig);
-    }
-    
-    // Update laser pointers based on controller visibility
+
+    if (currentRoom === room1 && room1.userData.update) room1.userData.update(delta, playerRig);
+    if (currentRoom === room2 && room2.userData.update) room2.userData.update(delta, playerRig);
+    if (currentRoom === room3 && room3.userData.update) room3.userData.update(delta, playerRig);
+
     controllers.forEach((controller, index) => {
-        if (controller.visible && renderer.xr.isPresenting) {
-            laserLines[index].visible = true;
-        } else {
-            laserLines[index].visible = false;
-        }
+        laserLines[index].visible = controller.visible && renderer.xr.isPresenting;
     });
-    
+
     renderer.render(scene, camera);
 });
 
-console.log("✅ VR application initialized with 3 rooms and OrbitControls");
+console.log("✅ VR application initialized");

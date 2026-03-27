@@ -55,8 +55,6 @@ const mainTvG = new THREE.Group();
 
 const mainTvBody = box(5.2, 3.1, 0.12, 0x0d0d0d, 0.2, 0.6);
 mainTvG.add(mainTvBody);
-const mainTvBezel = box(5.0, 2.9, 0.05, 0x111111, 0.15, 0.5);
-mainTvBezel.position.z = -0.035; mainTvG.add(mainTvBezel);
 
 // ── FALLBACK CANVAS — видео байхгүй үед харуулна ──
 const fallbackCanvas = document.createElement('canvas');
@@ -85,7 +83,7 @@ drawFallback();
 // ── TV SCREEN — эхэндээ fallback, видео бэлэн болмогц солино ──
 const mainTvScreenMat = new THREE.MeshBasicMaterial({ map: fallbackTex, side: THREE.FrontSide });
 const mainTvScreen = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 2.7), mainTvScreenMat);
-mainTvScreen.position.z = 0.062;   // frame-ийн өмнө гарах
+mainTvScreen.position.z = 0.3;   // frame-ийн өмнө гарах
 mainTvScreen.name = 'mainTvScreen';
 mainTvScreen.userData.kind = 'tv';
 mainTvG.add(mainTvScreen);

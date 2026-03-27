@@ -83,7 +83,7 @@ drawFallback();
 // ── TV SCREEN — эхэндээ fallback, видео бэлэн болмогц солино ──
 const mainTvScreenMat = new THREE.MeshBasicMaterial({ map: fallbackTex, side: THREE.FrontSide });
 const mainTvScreen = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 2.7), mainTvScreenMat);
-mainTvScreen.position.z = 0.3;   // frame-ийн өмнө гарах
+mainTvScreen.position.z = 0.5;   // frame-ийн өмнө гарах
 mainTvScreen.name = 'mainTvScreen';
 mainTvScreen.userData.kind = 'tv';
 mainTvG.add(mainTvScreen);
